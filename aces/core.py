@@ -251,8 +251,10 @@ class Engine:
                 # Supervisory: the ledger of what each role was shown, plus the event trail.
                 # This is the only view that can compare a projection against the secret it should
                 # not contain, which is precisely why it cannot act on the experiment.
-                ledger = db.execute('SELECT id,role,work_id,projection,created FROM dispatches '
-                                    'ORDER BY id DESC LIMIT 3').fetchall()
+                ledger = db.execute(
+                    'SELECT d.id,d.role,d.work_id,d.projection,d.created FROM dispatches d '
+                    'JOIN (SELECT role, MAX(id) AS mid FROM dispatches GROUP BY role) m ON d.id=m.mid '
+                    'ORDER BY d.id DESC').fetchall()
                 return {'dispatches': [{'id': r['id'], 'role': r['role'], 'work_id': r['work_id'],
                                         'projection': r['projection'][:2500], 'created': r['created']}
                                        for r in ledger],
