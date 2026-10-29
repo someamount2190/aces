@@ -1,0 +1,20 @@
+[
+  {
+    "work_id": "7bdcbc18aa7474faf64f97d1d72ca430",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[{\"id\":1,\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Four fixed rotations around forward-causal prefix runs. Chosen-plaintext differential probing of single-byte flips should localise key bytes incrementally; the 16-byte round-robin schedule means positions 16 apart reuse key bytes. No nonce, no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L; rotations invert by L-n, chain_add by differencing, the modular additions carry the only GF(2) non-linearity.\",\"name\":\"four_seam_wrap_mixer_v1\",\"program\":[[\"rot_bytes\",211],[\"add_key\",0],[\"chain_add\",0],[\"rol\",3],[\"xor_key\",0],[\"rot_bytes\",89],[\"add\",128],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",5],[\"rot_bytes\",131],[\"add\",46],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",7],[\"rot_bytes\",59],[\"add\",201],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1]]}}],\"failures\":[],\"feedback\":[],\"rejections\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "fb306cabda53464eae59265f1b1d18e1",
+    "role": "adversary",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"candy\":0,\"challenge\":{\"id\":1,\"parent\":null,\"public\":{\"category\":\"plaintext_recovery\",\"ciphertext\":\"c71b783c123518bb4c8718696fb86d23dcfacc9750700df9\",\"key_bits\":128,\"known_ciphertext\":\"926aa3ef\",\"known_plaintext\":\"00010203\",\"mode\":\"open\",\"oracle_budget\":64,\"rules\":\"Recover exact target plaintext. Toy 8-bit key. No external targets.\",\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Four fixed rotations around forward-causal prefix runs. Chosen-plaintext differential probing of single-byte flips should localise key bytes incrementally; the 16-byte round-robin schedule means positions 16 apart reuse key bytes. No nonce, no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L; rotations invert by L-n, chain_add by differencing, the modular additions carry the only GF(2) non-linearity.\",\"name\":\"four_seam_wrap_mixer_v1\",\"program\":[[\"rot_bytes\",211],[\"add_key\",0],[\"chain_add\",0],[\"rol\",3],[\"xor_key\",0],[\"rot_bytes\",89],[\"add\",128],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",5],[\"rot_bytes\",131],[\"add\",46],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",7],[\"rot_bytes\",59],[\"add\",201],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1]]}},\"state\":\"ACTIVE\"},\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"adversary\",\"task\":\"Recover the target plaintext, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "6ec0bceedae2f894c0f31e8808a04398",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793282225.5404434,\"data\":\"{\\\"candidate\\\":1}\",\"id\":1,\"kind\":\"candidate_registered\"},{\"created\":1793282225.5554352,\"data\":\"{\\\"challenge\\\":1,\\\"mode\\\":\\\"open\\\",\\\"parent\\\":null}\",\"id\":2,\"kind\":\"published\"},{\"created\":1793282225.7105443,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"7bdcbc18aa7474faf64f97d1d72ca430\\\"}\",\"id\":3,\"kind\":\"work_started\"},{\"created\":1793282225.7436924,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"adversary\\\",\\\"work_id\\\":\\\"fb306cabda53464eae59265f1b1d18e1\\\"}\",\"id\":4,\"kind\":\"work_started\"}],\"findings\":[],\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]
