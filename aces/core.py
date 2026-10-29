@@ -70,11 +70,18 @@ class _ClosingConnection(sqlite3.Connection):
 
 
 class Engine:
-    def __init__(self, path, key_bits=DEFAULT_KEY_BITS):
+    def __init__(self, path, key_bits=None):
         self.path = str(path)
-        self.key_bits = key_bits
         with self.connect() as db:
             apply(db)
+            stored = db.execute("SELECT v FROM settings WHERE k='key_bits'").fetchone()
+            if stored is not None:
+                # An existing database wins: the width is a property of the run, not of the caller.
+                key_bits = int(stored['v'])
+            else:
+                key_bits = DEFAULT_KEY_BITS if key_bits is None else key_bits
+                db.execute("INSERT OR REPLACE INTO settings(k,v) VALUES('key_bits',?)", (str(key_bits),))
+            self.key_bits = key_bits
             for role in ALL_ROLES:
                 db.execute('INSERT OR IGNORE INTO sessions(role,messages) VALUES(?,?)', (role, '[]'))
 

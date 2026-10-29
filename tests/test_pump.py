@@ -510,6 +510,15 @@ class PumpTests(unittest.TestCase):
         self.assertIsNone(wide.tool('adversary', 'solve', {})['strategy'])
         self.assertEqual(wide.view('adversary')['challenge']['state'], 'ACTIVE')
 
+    def test_key_width_survives_a_new_engine(self):
+        """RUN-010: every CLI call rebuilt the Engine and silently defaulted to 32 bits."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 'width.sqlite3'
+        self.assertEqual(Engine(path, key_bits=128).key_bits, 128)
+        self.assertEqual(Engine(path).key_bits, 128)              # fresh CLI invocation
+        self.assertEqual(Engine(path, key_bits=32).key_bits, 128)  # the run wins over the caller
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

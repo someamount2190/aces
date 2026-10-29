@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS control(
     id INTEGER PRIMARY KEY CHECK(id=1),
     state TEXT NOT NULL);
 
+-- Run-wide settings that must survive process restarts. The key width is one: every CLI invocation
+-- builds a fresh Engine, and a fresh Engine that cannot read the width will silently default to 32
+-- bits and mis-describe every challenge it touches.
+CREATE TABLE IF NOT EXISTS settings(
+    k TEXT PRIMARY KEY,
+    v TEXT NOT NULL);
+
 -- What each role was actually shown. Without this ledger, blindness is a claim about code;
 -- with it, a supervisory session can audit what really crossed each boundary.
 CREATE TABLE IF NOT EXISTS dispatches(
