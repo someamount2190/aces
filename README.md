@@ -26,6 +26,22 @@ python -m aces --db demo.sqlite3
 
 Open http://127.0.0.1:8765 for the administrator dashboard. The demo is explicitly deterministic integration testing, not autonomous agent operation. Use a fresh demo database on each demo run.
 
+## Dispatch pump
+
+The coordinator does not call a model. It publishes work; something moves that work to a role session and
+returns one JSON answer. See [docs/AGENTS.md](docs/AGENTS.md) for the protocol and the role charters.
+
+```sh
+python -m aces.pump --db live.sqlite3 dispatch                     # work for roles that need it
+python -m aces.pump --db live.sqlite3 deliver --work-id ID --answer '{"tool":"register","args":{...}}'
+python -m aces.pump --db live.sqlite3 status
+python -m aces.pump --db live.sqlite3 recover --minutes 15         # abandon stale dispatches
+```
+
+`python tools/smoke.py` drives one complete cycle through those commands with scripted answers, so the
+plumbing is proven before any real session touches it: register → publish → compute → submit → breach →
+finding → successor challenge.
+
 For live models, copy `config.example.json` to `config.json`, set each model name and the provider base URL, optionally set `ACES_API_KEY`, then:
 
 ```sh

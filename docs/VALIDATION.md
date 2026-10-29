@@ -1,8 +1,9 @@
 # Validation
 
-> **Current count: 11 tests** (this record says 10; a test was added after it was written). Documentation
-> drift is tracked as defect 6 in [ARCHITECTURE.md](ARCHITECTURE.md) §11. For the later live-model run and
-> its outcome, see [CONTEXT.md](CONTEXT.md).
+> **Current count: 26 tests** (this record says 10). The suite now covers the dispatch pump and the six
+> gates in [ROADMAP.md](ROADMAP.md) §6, not only the engine. Documentation drift is tracked as defect 6 in
+> [ARCHITECTURE.md](ARCHITECTURE.md) §11. For the 2026-10-29 live-model run and its outcome, see
+> [CONTEXT.md](CONTEXT.md).
 
 Build environment run: 10 unittest tests PASS (Python standard library).
 

@@ -319,6 +319,13 @@ owning phase.
 | 8 | Integrator receives raw breach payload including target plaintext | projection serialises the event row | sanitized failure projection: category, method, which property failed — **never** the secret | 2 |
 | 9 | Black-box mode is unsolvable: `public` omits `spec`, but `compute` requires a program | single attack path | black-box challenges must expose an oracle and a bounded `compute` variant that does not need the program, or the mode must be disabled with an explicit error | 5 |
 
+**Status (2026-10-29, after the thin slice).** Closed: **1** (the pump evaluates idleness on a
+post-claim snapshot and never re-dispatches an idle role), **2** (`claim_work` refuses a second in-flight
+item for a role), **7** (`abandon_stale` marks orphans and never re-issues them), **8** (the Integrator's
+failure projection strips the recovered plaintext). Partial: **4** — keyless constructions are now rejected
+at publication, but re-publishing a breached candidate is still allowed until candidate versioning exists.
+Open: **3**, **5**, **6**, **9**.
+
 ## 12. Security boundaries: now, next, later
 
 | Boundary | Now (single process) | Phase 8 (containers) |
