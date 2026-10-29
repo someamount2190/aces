@@ -133,6 +133,30 @@ CREATE TABLE IF NOT EXISTS research_requests(
     created REAL NOT NULL,
     answered REAL);
 
+-- Every chosen plaintext the Adversary asked for. The budget is counted from here, so the limit is
+-- a fact about the record rather than a promise in a prompt.
+CREATE TABLE IF NOT EXISTS oracle_queries(
+    id INTEGER PRIMARY KEY,
+    challenge INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    plaintext TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    created REAL NOT NULL);
+
+-- Investigate before searching. A hypothesis names the weakness, the attack it implies, and the
+-- evidence that would confirm it; the outcome is recorded so a dead end is not walked twice.
+CREATE TABLE IF NOT EXISTS hypotheses(
+    id INTEGER PRIMARY KEY,
+    challenge INTEGER,
+    role TEXT NOT NULL,
+    weakness TEXT NOT NULL,
+    attack TEXT NOT NULL,
+    predicted TEXT NOT NULL,
+    status TEXT NOT NULL,
+    evidence TEXT,
+    created REAL NOT NULL,
+    resolved REAL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 

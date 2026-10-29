@@ -300,13 +300,19 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(self.e.view('adversary')['candy'], 0)
         self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
 
-    def test_a_non_linear_construction_resists_the_linear_attack(self):
+    def test_non_linearity_defeats_the_linear_attack_but_not_the_sequential_one(self):
+        """Non-linearity alone is not enough: a causal construction still peels byte by byte."""
+        from aces.verify import gf2_linear_attack, is_gf2_linear
         nl = dict(SPEC, name='nonlinear', program=[['xor_key', 0], ['chain_add', 0], ['add_key', 0]])
         cid = self.e.register(nl)['candidate']
         self.e.publish(cid)
-        out = self.e.tool('adversary', 'solve', {})
-        self.assertIsNone(out['strategy'])
-        self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
+        public = self.e.view('adversary')['challenge']['public']
+        program = public['spec']['program']
+        pair = (bytes.fromhex(public['known_plaintext']), bytes.fromhex(public['known_ciphertext']))
+        self.assertFalse(is_gf2_linear(program))
+        self.assertIsNone(gf2_linear_attack(program, 16, pair))      # the linear attack is defeated
+        self.assertEqual(self.e.tool('adversary', 'solve', {})['strategy'],
+                         'sequential_recovery')                     # but causality is not
 
     def test_generator_learns_which_method_broke_each_challenge(self):
         cid = self.cycle()
@@ -444,6 +450,65 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['role'], 'generator')
         self.assertIn('aces_', rows[0]['tokens'])
+
+    def test_oracle_is_capped_per_call_and_per_challenge(self):
+        self.cycle()
+        out = self.e.tool('adversary', 'oracle', {'plaintexts': ['00' * 24] * 8})
+        self.assertEqual(len(out['ciphertexts']), 8)
+        self.assertEqual(out['used'], 8)
+        with self.assertRaises(Denied):                       # batch cap
+            self.e.tool('adversary', 'oracle', {'plaintexts': ['00' * 24] * 9})
+        for _ in range(7):                                    # 8 + 56 = 64, the lifetime cap
+            self.e.tool('adversary', 'oracle', {'plaintexts': ['00' * 24] * 8})
+        with self.assertRaises(Denied):                       # 65th refused
+            self.e.tool('adversary', 'oracle', {'plaintexts': ['00' * 24]})
+
+    def test_key_schedule_analysis_names_the_weakness(self):
+        self.cycle()
+        out = self.e.tool('adversary', 'analyse', {'kind': 'key_schedule'})
+        self.assertEqual(out['schedule'], 'round_robin_by_position')
+        self.assertTrue(out['causal'])                        # SPEC is xor_key only
+
+    def test_hypotheses_are_recorded_and_resolved(self):
+        self.cycle()
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'forward-causal chain', 'attack': 'sequential_recovery',
+            'predicted': 'key bytes recovered in position order'})
+        self.assertEqual(opened['status'], 'open')
+        resolved = self.e.tool('adversary', 'resolve', {
+            'hypothesis': opened['hypothesis'], 'status': 'refuted', 'evidence': 'no prefix match'})
+        self.assertEqual(resolved['status'], 'refuted')
+        self.assertEqual(self.e.view('adversary')['hypotheses'][0]['status'], 'refuted')
+
+    def test_sequential_recovery_peels_a_causal_construction(self):
+        """RUN-007's proof, now implemented: 4 x 256 evaluations against a 32-bit key.
+
+        The program is causal but non-linear, so the linear attack does not apply and the sequential
+        peel is the only strategy that can work.
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        wide = Engine(Path(tmp.name) / 'seq.sqlite3')          # default 32-bit key
+        wide.register(dict(SPEC, name='causal-nonlinear',
+                           program=[['xor_key', 0], ['add_key', 0], ['chain_add', 0]]))
+        wide.publish(1)
+        out = wide.tool('adversary', 'solve', {})
+        self.assertEqual(out['strategy'], 'sequential_recovery')
+        # measured, with backtracking; far below the 2^32 key space and below the 4x256 worst case
+        self.assertTrue(0 < out['evaluations'] <= 4 * 256, out['evaluations'])
+        self.assertEqual(len(bytes.fromhex(out['plaintext'])), 24)
+
+    def test_diffusion_plus_addition_resists_every_implemented_strategy(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        wide = Engine(Path(tmp.name) / 'survivor.sqlite3')
+        survivor = dict(SPEC, name='survivor', program=[
+            ['xor_key', 0], ['add_key', 0], ['rol', 5], ['rot_bytes', 13], ['chain_add', 0],
+            ['xor', 90], ['rol', 3], ['rot_bytes', 7], ['add', 158], ['add_key', 0]])
+        wide.register(survivor)
+        wide.publish(1)
+        self.assertIsNone(wide.tool('adversary', 'solve', {})['strategy'])
+        self.assertEqual(wide.view('adversary')['challenge']['state'], 'ACTIVE')
 
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))

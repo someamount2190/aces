@@ -118,12 +118,12 @@ def verify_plaintext(secret_plaintext_hex, submitted_hex):
     return len(a) == len(b) and hashlib.sha256(a.encode()).hexdigest() == hashlib.sha256(b.encode()).hexdigest()
 
 
-METHODS = ('known_plaintext_key_search', 'gf2_linear', 'chosen_plaintext_search',
+METHODS = ('known_plaintext_key_search', 'gf2_linear', 'sequential_recovery', 'chosen_plaintext_search',
            'algebraic_inversion', 'distinguishing_statistic', 'implementation_defect')
 
 # A method is "structural" when it does better than trying every key. Enumeration is labour; a
 # structural method is knowledge, and only knowledge counts as a breach.
-STRUCTURAL = ('gf2_linear',)
+STRUCTURAL = ('gf2_linear', 'sequential_recovery')
 
 
 def valid_method(method):

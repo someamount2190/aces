@@ -343,6 +343,28 @@ by Gaussian elimination — 33 evaluations for a 32-bit key instead of 2^32. A p
 the construction space interesting: linearity is free to detect and fatal to ship, and non-linearity plus
 cross-byte mixing is the minimum for a construction to survive.
 
+**Workbench.** The Adversary does not execute its own code; it asks the trusted process for evidence. Five
+tools, all deterministic and budgeted: `oracle` (chosen plaintexts — 8 per call, 64 per challenge, counted
+from the `oracle_queries` table), `analyse` with `key_schedule`, `frequency`, `differential` and `pairs`,
+`hypothesize`/`resolve` for the investigation log, `solve` for the implemented structural attacks, and
+`compute` for bounded enumeration (which never counts as a breach).
+
+**Investigate before searching.** `hypothesize` records a weakness, the attack it implies and the evidence
+that would confirm it; `resolve` marks it confirmed or refuted. Refuted hypotheses stay in the Adversary's
+projection, so a dead end is not walked twice. This is a process discipline, not a security property.
+
+**Recognised methods.** A breach must arrive as a derivation the verifier can recompute. Two strategies are
+implemented: `gf2_linear` (affine constructions, ~key-width evaluations of Gaussian elimination) and
+`sequential_recovery` (causal constructions, ~key_bytes × 256, with backtracking because prefix matches are
+not always unique). The method name must match the strategy that produced the derivation; prose never
+grounds a breach.
+
+**Benchmark ladder.** `tools/bench.py` runs the strategies against constructions that differ by one property
+and reports the strategy observed, evaluations, seconds and oracle queries. It is how a new tool is judged:
+if a rung that used to survive now falls, the tool improved; if a rung regresses, it did not. One rung is a
+deliberate false negative — a rotation by the block length is a syntactic diffusion op that is semantically
+the identity — which is exactly the kind of gap a ladder exposes.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.

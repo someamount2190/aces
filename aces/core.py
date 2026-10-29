@@ -9,6 +9,7 @@ from .schema import apply, DOMAIN_EVENTS
 from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
                      valid_method, key_bytes, gf2_linear_attack, is_gf2_linear, is_causal,
                      DEFAULT_KEY_BITS, COMPUTE_BUDGET, CHAIN_OPS)
+from . import workbench
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
@@ -206,6 +207,25 @@ class Engine:
             return len(rows)
 
     # ---- domain ---------------------------------------------------------------------------
+    def survey(self):
+        """The active challenge and its public projection. Raises if there is nothing to attack."""
+        with self.connect() as db:
+            row = db.execute("SELECT id,public FROM challenges WHERE state='ACTIVE' "
+                             "ORDER BY id DESC LIMIT 1").fetchone()
+        if not row:
+            raise Denied('no active challenge')
+        public = json.loads(row['public'])
+        if 'spec' not in public:
+            raise Denied('blackbox challenge: no construction to analyse')
+        return row['id'], public
+
+    def challenge_secret(self, challenge):
+        with self.connect() as db:
+            row = db.execute('SELECT secret FROM challenges WHERE id=?', (challenge,)).fetchone()
+        if not row:
+            raise ValueError('unknown challenge')
+        return row['secret']
+
     def register(self, spec):
         if set(spec) != CANDIDATE_FIELDS:
             raise ValueError('candidate fields required')
@@ -324,7 +344,7 @@ class Engine:
                 # Trying every key is labour, not knowledge. It is recorded, it costs turns, and it
                 # does not pay: a breach has to show a method that does better than the search space.
                 return reject('enumeration_is_not_a_breach')
-            required = {'gf2_linear': 'gf2_linear'}
+            required = {'gf2_linear': 'gf2_linear', 'sequential_recovery': 'sequential_recovery'}
             if matched and required.get(strategy, method) != method:
                 return reject('method_mismatch')
 
@@ -368,7 +388,12 @@ class Engine:
                 challenge['public'] = json.loads(challenge['public'])
             candy = db.execute('SELECT COALESCE(SUM(amount),0) FROM rewards').fetchone()[0]
             if role == 'adversary':
-                return {'challenge': challenge, 'candy': candy}
+                # Its own hypothesis log, so a refuted dead end is not walked twice.
+                hypotheses = [{'id': r['id'], 'weakness': r['weakness'], 'attack': r['attack'],
+                               'status': r['status']}
+                              for r in db.execute('SELECT id,weakness,attack,status FROM hypotheses '
+                                                  'ORDER BY id DESC LIMIT 10')]
+                return {'challenge': challenge, 'candy': candy, 'hypotheses': hypotheses}
             catalog = [dict(id=r[0], spec=contract(json.loads(r[1])))
                        for r in db.execute('SELECT id,spec FROM candidates')]
             if role == 'integrator':
@@ -397,7 +422,9 @@ class Engine:
 
     # ---- tools ----------------------------------------------------------------------------
     ALLOWED = {'generator': {'register'}, 'integrator': {'publish', 'reject'},
-               'adversary': {'submit', 'compute', 'solve'}, 'observer': {'record_finding'},
+               'adversary': {'submit', 'compute', 'solve', 'oracle', 'analyse',
+                             'hypothesize', 'resolve'},
+               'observer': {'record_finding'},
                WARDEN: {'report_leak'}}
 
     def tool(self, role, name, args):
@@ -412,38 +439,127 @@ class Engine:
         if name == 'submit':
             return self.submit(**args)
         if name == 'solve':
-            # Structural attack. This is knowledge rather than labour: it either works in a handful
-            # of evaluations or it reports that the construction offers no such handle.
-            with self.connect() as db:
-                active = db.execute("SELECT id,public FROM challenges WHERE state='ACTIVE' "
-                                    "ORDER BY id DESC LIMIT 1").fetchone()
-            if not active:
-                raise Denied('no active challenge')
-            public = json.loads(active['public'])
-            if 'spec' not in public:
-                raise Denied('blackbox challenge: no construction to analyse')
+            # Structural attacks. Knowledge rather than labour: each strategy either works in a
+            # handful of evaluations or reports that the construction offers no such handle.
+            challenge, public = self.survey()
             program = public['spec']['program']
             bits = public.get('key_bits', self.key_bits)
             pair = (bytes.fromhex(public['known_plaintext']), bytes.fromhex(public['known_ciphertext']))
-            key = gf2_linear_attack(program, bits, pair)
-            if key is None:
+            result = workbench.solve(program, bits, pair)
+            if result['strategy'] is None:
                 with self.tx() as db:
-                    self.event(db, 'attack_failed', {'challenge': active['id'],
-                                                     'reason': 'no structural attack for this construction'})
-                return {'strategy': None, 'reason': 'no structural attack for this construction'}
+                    self.event(db, 'attack_failed', {'challenge': challenge,
+                                                     'reason': 'no implemented strategy applies'})
+                return {'strategy': None, 'reason': 'no implemented strategy applies to this construction',
+                        'evaluations': result['evaluations'], 'seconds': result['seconds']}
             width = max(1, bits // 8)
-            plaintext = transform(bytes.fromhex(public['ciphertext']), key.to_bytes(width, 'big'),
-                                  program, True).hex()
+            plaintext = transform(bytes.fromhex(public['ciphertext']),
+                                  result['key'].to_bytes(width, 'big'), program, True).hex()
             with self.tx() as db:
                 db.execute('INSERT INTO derivations(challenge,role,program,solutions,created,strategy) '
                            'VALUES(?,?,?,?,?,?)',
-                           (active['id'], role, packed(program),
-                            packed([{'plaintext': plaintext, 'key': key}]), time.time(), 'gf2_linear'))
-                self.event(db, 'derivation_recorded', {'challenge': active['id'], 'role': role,
-                                                       'solutions': 1, 'strategy': 'gf2_linear',
-                                                       'evaluations': bits + 1})
-            return {'strategy': 'gf2_linear', 'key': key, 'plaintext': plaintext,
-                    'evaluations': bits + 1}
+                           (challenge, role, packed(program),
+                            packed([{'plaintext': plaintext, 'key': result['key']}]), time.time(),
+                            result['strategy']))
+                self.event(db, 'derivation_recorded', {'challenge': challenge, 'role': role,
+                                                       'solutions': 1, 'strategy': result['strategy'],
+                                                       'evaluations': result['evaluations'],
+                                                       'seconds': result['seconds']})
+            return {'strategy': result['strategy'], 'key': result['key'], 'plaintext': plaintext,
+                    'evaluations': result['evaluations'], 'seconds': result['seconds']}
+
+        if name == 'oracle':
+            challenge, public = self.survey()
+            plaintexts = args.get('plaintexts') or []
+            if not isinstance(plaintexts, list) or not 1 <= len(plaintexts) <= workbench.ORACLE_BATCH:
+                raise Denied(f'oracle takes 1..{workbench.ORACLE_BATCH} plaintexts per call')
+            with self.connect() as db:
+                used = db.execute('SELECT COUNT(*) FROM oracle_queries WHERE challenge=?',
+                                  (challenge,)).fetchone()[0]
+            if used + len(plaintexts) > workbench.ORACLE_LIMIT:
+                raise Denied(f'oracle budget exhausted: {used}/{workbench.ORACLE_LIMIT} used')
+            key = bytes.fromhex(json.loads(self.challenge_secret(challenge))['key'])
+            raw = [bytes.fromhex(p) for p in plaintexts]
+            out = workbench.encrypt_batch(public['spec']['program'], key, raw)
+            with self.tx() as db:
+                for p, c in zip(plaintexts, out):
+                    db.execute('INSERT INTO oracle_queries(challenge,role,plaintext,ciphertext,created) '
+                               'VALUES(?,?,?,?,?)', (challenge, role, p, c, time.time()))
+                self.event(db, 'oracle_queried', {'challenge': challenge, 'role': role,
+                                                  'count': len(out), 'used': used + len(out)})
+            return {'ciphertexts': out, 'used': used + len(out), 'limit': workbench.ORACLE_LIMIT}
+
+        if name == 'analyse':
+            kind = args.get('kind')
+            challenge, public = self.survey()
+            program = public['spec']['program']
+            bits = public.get('key_bits', self.key_bits)
+            if kind == 'key_schedule':
+                key_bits_default = bits // 8
+                return workbench.key_schedule(program, key_bits_default)
+            if kind == 'frequency':
+                samples = [bytes.fromhex(s) for s in (args.get('samples') or [])][:16] or \
+                          [bytes.fromhex(public['ciphertext'])]
+                return workbench.frequency(samples)
+            if kind == 'differential':
+                difference = bytes.fromhex(args.get('difference', '01'))
+                pairs = min(int(args.get('pairs', workbench.DIFF_PAIRS)), workbench.DIFF_PAIRS)
+                with self.connect() as db:
+                    used = db.execute('SELECT COUNT(*) FROM oracle_queries WHERE challenge=?',
+                                      (challenge,)).fetchone()[0]
+                if used + pairs * 2 > workbench.ORACLE_LIMIT:
+                    raise Denied(f'oracle budget exhausted: {used}/{workbench.ORACLE_LIMIT} used')
+                key = bytes.fromhex(json.loads(self.challenge_secret(challenge))['key'])
+                result = workbench.differential(program, key, difference, pairs)
+                with self.tx() as db:
+                    db.execute('INSERT INTO oracle_queries(challenge,role,plaintext,ciphertext,created) '
+                               'VALUES(?,?,?,?,?)',
+                               (challenge, role, f'differential x{pairs}', 'internal', time.time()))
+                    self.event(db, 'oracle_queried', {'challenge': challenge, 'role': role,
+                                                      'count': pairs * 2, 'used': used + pairs * 2})
+                return result
+            if kind == 'pairs':
+                candidate = int(args.get('key', 0))
+                width = max(1, bits // 8)
+                key = bytes.fromhex(json.loads(self.challenge_secret(challenge))['key'])
+                known = [(bytes.fromhex(public['known_plaintext']),
+                          bytes.fromhex(public['known_ciphertext']))]
+                for _ in range(3):
+                    probe = bytes.fromhex(hashlib.sha256(str(candidate).encode()).hexdigest()[:2 * len(known[0][0])])
+                    known.append((probe, transform(probe, key, program)))
+                return workbench.test_key(program, candidate.to_bytes(width, 'big'), known)
+            raise ValueError('unknown analysis kind')
+
+        if name == 'hypothesize':
+            for field in ('weakness', 'attack', 'predicted'):
+                value = args.get(field)
+                if not isinstance(value, str) or not 1 <= len(value) <= 600:
+                    raise ValueError(f'invalid hypothesis field: {field}')
+            challenge, _ = self.survey()
+            with self.tx() as db:
+                hid = db.execute('INSERT INTO hypotheses(challenge,role,weakness,attack,predicted,status,created) '
+                                 "VALUES(?,?,?,?,?,'open',?)",
+                                 (challenge, role, args['weakness'], args['attack'],
+                                  args['predicted'], time.time())).lastrowid
+                self.event(db, 'hypothesis_opened', {'challenge': challenge, 'role': role,
+                                                     'hypothesis': hid, 'attack': args['attack']})
+            return {'hypothesis': hid, 'status': 'open'}
+
+        if name == 'resolve':
+            hid = int(args.get('hypothesis', 0))
+            status = args.get('status')
+            if status not in ('confirmed', 'refuted'):
+                raise ValueError('status must be confirmed or refuted')
+            with self.tx() as db:
+                row = db.execute('SELECT * FROM hypotheses WHERE id=?', (hid,)).fetchone()
+                if not row:
+                    raise ValueError('unknown hypothesis')
+                if row['status'] != 'open':
+                    return {'hypothesis': hid, 'status': row['status'], 'note': 'already resolved'}
+                db.execute('UPDATE hypotheses SET status=?,evidence=?,resolved=? WHERE id=?',
+                           (status, (args.get('evidence') or '')[:2000], time.time(), hid))
+                self.event(db, 'hypothesis_resolved', {'hypothesis': hid, 'status': status})
+            return {'hypothesis': hid, 'status': status}
 
         if name == 'compute':
             # Bounded cryptanalysis: no interpreter, no filesystem, no network. The search is capped

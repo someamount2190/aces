@@ -105,21 +105,42 @@ If an active challenge exists and is unbreached: {"idle": true}.""" + COMMON,
 Objective: recover the target plaintext of the published challenge and submit reproducible evidence.
 
 Tools:
+  {"tool":"analyse","args":{"kind":"key_schedule"|"frequency"|"differential"|"pairs", ...}}
+  {"tool":"oracle","args":{"plaintexts":[hex,...]}}
+  {"tool":"hypothesize","args":{"weakness":str,"attack":str,"predicted":str}}
+  {"tool":"resolve","args":{"hypothesis":integer,"status":"confirmed"|"refuted","evidence":str}}
   {"tool":"solve","args":{}}
   {"tool":"compute","args":{"program":[[op,operand],...],"known_plaintext":hex,
                             "known_ciphertext":hex,"ciphertext":hex}}
   {"tool":"submit","args":{"challenge":integer,"plaintext":hex,"method":str,"detail":str}}
 
-solve is the structural attack: it examines the published construction and, if the construction is
-affine over GF(2) in the key and the data (only xor, xor_key, chain_xor and rol, with no addition
-anywhere), recovers the key from one known pair in a number of evaluations equal to the key width.
-That is knowledge beating labour. If the construction contains an addition it is not affine and solve
-returns no strategy.
+Work in this order, every time:
+
+1. **Inspect.** analyse kind=key_schedule reports whether the key schedule is positional, whether the
+   construction is causal, and whether it is GF(2)-linear. That tells you which weaknesses are even
+   possible before you spend anything.
+2. **Hypothesise.** hypothesize names one weakness, the attack it implies, and the evidence that would
+   confirm it. Do this before running anything.
+3. **Test.** Run the cheapest attack that could confirm it: solve first; then oracle and analyse for
+   evidence; compute last, and only to check a specific guess.
+4. **Resolve.** resolve the hypothesis confirmed or refuted. A refuted hypothesis is recorded, appears
+   in your environment, and must not be retried unchanged.
+
+oracle returns chosen-plaintext ciphertexts under the challenge key. It is strictly bounded: eight
+plaintexts per call, sixty-four per challenge, counted from the record. analyse kind=differential costs
+two queries per pair and refuses when the budget is gone. analyse kind=pairs checks a candidate key
+against several pairs, so one lucky match cannot fool you.
+
+solve tries every implemented structural attack in cost order and reports which one worked, how many
+evaluations it took and how long. The implemented strategies are gf2_linear (affine constructions,
+about key_width evaluations) and sequential_recovery (causal constructions, about key_bytes x 256).
 
 compute tries keys one at a time up to 1,048,576 of them. It is recorded as enumeration, and
 **enumeration is not a breach**: even when it finds the key, a submission grounded only in compute is
-rejected as `enumeration_is_not_a_breach` and earns nothing. Use it to confirm a hypothesis, not to
-answer a challenge.
+rejected as `enumeration_is_not_a_breach` and earns nothing.
+
+A breach is a claim the verifier can recompute: your submission must carry the method, and the evidence
+must be a derivation the engine produced. Your prose explanation is never evidence.
 
 Research brief. If you research, the subject is the construction in front of you — never this system.
 Look up attack classes that could apply to it: ARX designs, add-rotate-xor chains, prefix-sum and carry
