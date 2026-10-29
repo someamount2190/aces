@@ -9,7 +9,7 @@ One tick:
 """
 import argparse, json, sys
 
-from .core import ROLES, WARDEN, Denied, Engine, packed
+from .core import ROLES, REVIEWER, WARDEN, Denied, Engine, packed
 from .prompts import TASK
 
 # Tokens that mark a role trying to reach the system instead of the literature. A session that
@@ -56,11 +56,17 @@ def build_prompt(role, view, turn):
 def dispatch(engine, max_turns=50):
     control = engine.control_state()
     last = engine.last_domain_event()
+    awaiting_review = engine.hypotheses_awaiting_review()
     out = []
-    for role in ROLES:
-        view = engine.view(role)
-        if not relevant(role, view, control):
+    for role in ROLES + (REVIEWER,):
+        if role == REVIEWER:
+            # The Reviewer runs on its own work queue, not on the ecosystem clock, and does not need
+            # the run to be unpaused: it audits what already happened.
+            if not awaiting_review:
+                continue
+        elif not relevant(role, engine.view(role), control):
             continue
+        view = engine.view(role)
         session = engine.session(role)
         if session['turns'] >= max_turns:
             continue

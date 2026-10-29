@@ -526,7 +526,7 @@ class PumpTests(unittest.TestCase):
             'weakness': 'causal chain', 'attack': 'sequential_recovery',
             'predicted': 'key recovered in 4096 evaluations'})
         # the adversary's own analysis had already ruled this out; that is the flaw
-        reviewed = self.e.tool('observer', 'critique', {
+        reviewed = self.e.tool('reviewer', 'critique', {
             'hypothesis': opened['hypothesis'], 'verdict': 'flawed',
             'flaw': 'ignored_own_analysis',
             'advice': 'check causal=false from key_schedule before proposing a causal-only attack'})
@@ -536,11 +536,11 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(reviews[0]['flaw'], 'ignored_own_analysis')
         self.assertIn('causal=false', reviews[0]['advice'])
 
-    def test_only_the_observer_may_critique(self):
+    def test_only_the_reviewer_may_critique(self):
         self.cycle()
         opened = self.e.tool('adversary', 'hypothesize', {
             'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
-        for role in ('generator', 'integrator', 'adversary'):
+        for role in ('generator', 'integrator', 'adversary', 'observer'):
             with self.assertRaises(Denied):
                 self.e.tool(role, 'critique', {'hypothesis': opened['hypothesis'],
                                                'verdict': 'sound', 'advice': 'fine'})
@@ -550,9 +550,27 @@ class PumpTests(unittest.TestCase):
         opened = self.e.tool('adversary', 'hypothesize', {
             'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
         with self.assertRaises(ValueError):
-            self.e.tool('observer', 'critique', {
+            self.e.tool('reviewer', 'critique', {
                 'hypothesis': opened['hypothesis'], 'verdict': 'flawed',
                 'flaw': 'vibes', 'advice': 'try harder'})
+
+    def test_reviewer_is_dispatched_only_when_a_hypothesis_is_unreviewed(self):
+        self.cycle()
+        self.assertEqual(self.e.hypotheses_awaiting_review(), 0)
+        self.assertNotIn('reviewer', [w['role'] for w in dispatch(self.e)])
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
+        self.assertEqual(self.e.hypotheses_awaiting_review(), 0)      # still open: nothing to judge
+        self.e.tool('adversary', 'resolve', {'hypothesis': opened['hypothesis'],
+                                             'status': 'refuted', 'evidence': 'no prefix match'})
+        self.assertEqual(self.e.hypotheses_awaiting_review(), 1)
+        work = self.by_role(dispatch(self.e))
+        self.assertIn('reviewer', work)
+        out = deliver(self.e, work['reviewer']['work_id'], json.dumps(
+            {'tool': 'critique', 'args': {'hypothesis': opened['hypothesis'], 'verdict': 'sound',
+                                          'advice': 'keep predicting falsifiable evidence'}}))
+        self.assertEqual(out['status'], 'ok', out)
+        self.assertEqual(self.e.hypotheses_awaiting_review(), 0)
 
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
@@ -566,6 +584,7 @@ class PumpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 
 

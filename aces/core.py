@@ -12,8 +12,9 @@ from .verify import (transform, validate, is_reversible, has_secret_term, verify
 from . import workbench
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
+REVIEWER = 'reviewer'                # red-teams the Adversary's process; no authority over truth
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
-ALL_ROLES = ROLES + (WARDEN,)
+ALL_ROLES = ROLES + (REVIEWER, WARDEN)
 CANDIDATE_FIELDS = {'name', 'program', 'limitations', 'math', 'assumptions'}
 SPEC_FIELDS = ('name', 'program', 'limitations', 'math', 'assumptions')
 EVENT_WINDOW = 60
@@ -226,6 +227,12 @@ class Engine:
             raise Denied('blackbox challenge: no construction to analyse')
         return row['id'], public
 
+    def hypotheses_awaiting_review(self):
+        """Resolved hypotheses nobody has reviewed yet. That is the Reviewer's work queue."""
+        with self.connect() as db:
+            return db.execute("SELECT COUNT(*) FROM hypotheses h WHERE h.status IN ('confirmed','refuted') "
+                              "AND NOT EXISTS (SELECT 1 FROM reviews v WHERE v.hypothesis=h.id)").fetchone()[0]
+
     def challenge_secret(self, challenge):
         with self.connect() as db:
             row = db.execute('SELECT secret FROM challenges WHERE id=?', (challenge,)).fetchone()
@@ -376,6 +383,22 @@ class Engine:
         if role not in ALL_ROLES:
             raise Denied('unknown role')
         with self.connect() as db:
+            if role == REVIEWER:
+                # Everything needed to judge process: what was claimed, what was predicted, what
+                # happened, and what previous reviews already said.
+                hypotheses = [{'id': r['id'], 'weakness': r['weakness'], 'attack': r['attack'],
+                               'predicted': r['predicted'], 'status': r['status'],
+                               'evidence': r['evidence'],
+                               'reviewed': r['reviewed']}
+                              for r in db.execute(
+                                  'SELECT h.id,h.weakness,h.attack,h.predicted,h.status,h.evidence,'
+                                  ' (SELECT COUNT(*) FROM reviews v WHERE v.hypothesis=h.id) AS reviewed '
+                                  'FROM hypotheses h ORDER BY h.id DESC LIMIT 10')]
+                reviews = [{'hypothesis': r['hypothesis'], 'verdict': r['verdict'],
+                            'flaw': r['flaw'], 'advice': r['advice']}
+                           for r in db.execute('SELECT hypothesis,verdict,flaw,advice FROM reviews '
+                                               'ORDER BY id DESC LIMIT 10')]
+                return {'hypotheses': hypotheses, 'reviews': reviews}
             if role == WARDEN:
                 # Supervisory: the ledger of what each role was shown, plus the event trail.
                 # This is the only view that can compare a projection against the secret it should
@@ -446,7 +469,8 @@ class Engine:
     ALLOWED = {'generator': {'register'}, 'integrator': {'publish', 'reject'},
                'adversary': {'submit', 'compute', 'solve', 'oracle', 'analyse',
                              'hypothesize', 'resolve'},
-               'observer': {'record_finding', 'critique'},
+               'observer': {'record_finding'},
+               REVIEWER: {'critique'},
                WARDEN: {'report_leak'}}
 
     FLAW_LABELS = ('ignored_own_analysis', 'unfalsifiable_prediction', 'no_fallback_after_refutation',
