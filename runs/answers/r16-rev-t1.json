@@ -1,0 +1,1 @@
+{"tool":"critique","args":{"hypothesis":1,"verdict":"flawed","flaw":"enumeration_as_analysis","advice":"Before reaching for compute, run the cheapest probe the oracle affords - single-byte flips across all 24 positions with the 63 unspent queries - so the concentration test uses real ciphertext pairs instead of a 2^20 search of a 2^128 key space that can never produce a key."}}

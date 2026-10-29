@@ -1,0 +1,20 @@
+[
+  {
+    "work_id": "8737639f0e8f5c821b96fb1f197591a1",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[{\"id\":1,\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Six fixed rotations around forward-causal prefix runs; a public straight-line program with no key schedule. Chosen-plaintext differential probing of single-byte flips is the expected route. No nonce and no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L. Rotations invert by L-n, chain_add by differencing, chain_xor by cancellation; the modular additions carry the only GF(2) non-linearity.\",\"name\":\"six_seam_stagger_v1\",\"program\":[[\"add\",13],[\"rot_bytes\",149],[\"add_key\",0],[\"chain_add\",0],[\"rol\",2],[\"xor_key\",0],[\"rot_bytes\",71],[\"add\",91],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",6],[\"rot_bytes\",193],[\"add\",37],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",4],[\"rot_bytes\",53],[\"add\",219],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1],[\"rot_bytes\",227],[\"add\",77],[\"add_key\",0]]}}],\"failures\":[],\"feedback\":[],\"rejections\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "6183baca5f4e98f32e5f73d6fde3e1a7",
+    "role": "adversary",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"candy\":0,\"challenge\":{\"id\":1,\"parent\":null,\"public\":{\"category\":\"plaintext_recovery\",\"ciphertext\":\"a5abe00ba8ac757f1c3ebd90763bef66981d78d8e639d18e\",\"key_bits\":128,\"known_ciphertext\":\"bcedeb56\",\"known_plaintext\":\"00010203\",\"mode\":\"open\",\"oracle_budget\":64,\"rules\":\"Recover exact target plaintext. Toy 8-bit key. No external targets.\",\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Six fixed rotations around forward-causal prefix runs; a public straight-line program with no key schedule. Chosen-plaintext differential probing of single-byte flips is the expected route. No nonce and no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L. Rotations invert by L-n, chain_add by differencing, chain_xor by cancellation; the modular additions carry the only GF(2) non-linearity.\",\"name\":\"six_seam_stagger_v1\",\"program\":[[\"add\",13],[\"rot_bytes\",149],[\"add_key\",0],[\"chain_add\",0],[\"rol\",2],[\"xor_key\",0],[\"rot_bytes\",71],[\"add\",91],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",6],[\"rot_bytes\",193],[\"add\",37],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",4],[\"rot_bytes\",53],[\"add\",219],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1],[\"rot_bytes\",227],[\"add\",77],[\"add_key\",0]]}},\"state\":\"ACTIVE\"},\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"adversary\",\"task\":\"Recover the target plaintext, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "e03210f52777f64a3838ac4e1c8fa2d9",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793287809.5587173,\"data\":\"{\\\"candidate\\\":1}\",\"id\":1,\"kind\":\"candidate_registered\"},{\"created\":1793287809.5790024,\"data\":\"{\\\"challenge\\\":1,\\\"mode\\\":\\\"open\\\",\\\"parent\\\":null}\",\"id\":2,\"kind\":\"published\"},{\"created\":1793287809.7532105,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"8737639f0e8f5c821b96fb1f197591a1\\\"}\",\"id\":3,\"kind\":\"work_started\"},{\"created\":1793287809.7987287,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"adversary\\\",\\\"work_id\\\":\\\"6183baca5f4e98f32e5f73d6fde3e1a7\\\"}\",\"id\":4,\"kind\":\"work_started\"}],\"findings\":[],\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]
