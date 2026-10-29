@@ -1,4 +1,4 @@
-﻿import concurrent.futures, json, tempfile, unittest
+import concurrent.futures, json, tempfile, unittest
 from pathlib import Path
 from aces.core import Engine, Denied, transform, validate
 from aces.runtime import Coordinator
@@ -11,9 +11,8 @@ class Tests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
     def publish(self): return self.e.tool('integrator','publish',{'candidate':self.cid})['challenge']
     def solve(self):
-        ch=self.e.view('adversary')['challenge']; public=ch['public']
-        args={k:public[k] for k in ('known_plaintext','known_ciphertext','ciphertext')}; args['program']=public['spec']['program']
-        return ch['id'],self.e.tool('adversary','compute',args)['solutions'][0]['plaintext']
+        ch=self.e.view('adversary')['challenge']
+        return ch['id'],self.e.tool('adversary','solve',{})['plaintext']
     def test_correctness(self):
         for prog in ([['add_key',0],['rol',3],['xor',81]],[['xor_key',0]]):
             for k in range(256): self.assertEqual(bytes(range(256)),transform(transform(bytes(range(256)),k,prog),k,prog,True))
@@ -33,7 +32,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.e.view('integrator')['verified_failures'],[])
     def test_cycle_duplicate_restart_feedback(self):
         cid=self.publish(); cid,plain=self.solve()
-        self.assertTrue(self.e.submit(cid,plain,method='known_plaintext_key_search')['verified'])
+        self.assertTrue(self.e.submit(cid,plain,method='gf2_linear')['verified'])
         self.assertTrue(self.e.submit(cid,plain)['duplicate'])
         self.assertEqual(self.e.view('adversary')['candy'],1)
         self.e=Engine(self.path, key_bits=16)
@@ -44,7 +43,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.e.view('adversary')['challenge']['state'],'ACTIVE')
     def test_concurrent_rewards(self):
         self.publish(); cid,plain=self.solve()
-        with concurrent.futures.ThreadPoolExecutor(8) as pool: list(pool.map(lambda _:self.e.submit(cid,plain,method='known_plaintext_key_search'),range(16)))
+        with concurrent.futures.ThreadPoolExecutor(8) as pool: list(pool.map(lambda _:self.e.submit(cid,plain,method='gf2_linear'),range(16)))
         self.assertEqual(self.e.view('adversary')['candy'],1)
         self.assertEqual(len(self.e.view('integrator')['verified_failures']),1)
     def test_vm_rejects_io_and_unbounded_code(self):
@@ -79,5 +78,6 @@ class Tests(unittest.TestCase):
         self.assertEqual((row['turns'],row['cursor']), (1,17))
         self.assertEqual(item['status'],'DONE')
 if __name__=='__main__': unittest.main()
+
 
 

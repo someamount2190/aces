@@ -7,7 +7,8 @@ import contextlib, hashlib, json, secrets, sqlite3, time
 
 from .schema import apply, DOMAIN_EVENTS
 from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
-                     valid_method, key_bytes, DEFAULT_KEY_BITS, COMPUTE_BUDGET, CHAIN_OPS)
+                     valid_method, key_bytes, gf2_linear_attack, is_gf2_linear,
+                     DEFAULT_KEY_BITS, COMPUTE_BUDGET, CHAIN_OPS)
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
@@ -297,10 +298,11 @@ class Engine:
                 raise Denied('challenge unavailable')
             matched = verify_plaintext(json.loads(row['secret'])['plaintext'], plaintext)
 
-            derivation_program, derived = None, False
-            for r in db.execute('SELECT program,solutions FROM derivations WHERE challenge=?', (challenge,)):
+            derivation_program, derived, strategy = None, False, None
+            for r in db.execute('SELECT program,solutions,strategy FROM derivations WHERE challenge=?',
+                                (challenge,)):
                 if plaintext in {s.get('plaintext') for s in json.loads(r['solutions'])}:
-                    derivation_program, derived = json.loads(r['program']), True
+                    derivation_program, derived, strategy = json.loads(r['program']), True, r['strategy']
                     break
 
             def reject(reason):
@@ -313,9 +315,12 @@ class Engine:
                 return reject('no_method')
             if matched and not valid_method(method):
                 return reject('unverified_method')
-            public = json.loads(row['public'])
-            published = public.get('spec', {}).get('program')
-            if matched and method == 'known_plaintext_key_search' and published and derivation_program != published:
+            if matched and strategy == 'enumeration':
+                # Trying every key is labour, not knowledge. It is recorded, it costs turns, and it
+                # does not pay: a breach has to show a method that does better than the search space.
+                return reject('enumeration_is_not_a_breach')
+            required = {'gf2_linear': 'gf2_linear'}
+            if matched and required.get(strategy, method) != method:
                 return reject('method_mismatch')
 
             valid = matched and derived
@@ -387,7 +392,7 @@ class Engine:
 
     # ---- tools ----------------------------------------------------------------------------
     ALLOWED = {'generator': {'register'}, 'integrator': {'publish', 'reject'},
-               'adversary': {'submit', 'compute'}, 'observer': {'record_finding'},
+               'adversary': {'submit', 'compute', 'solve'}, 'observer': {'record_finding'},
                WARDEN: {'report_leak'}}
 
     def tool(self, role, name, args):
@@ -401,6 +406,40 @@ class Engine:
             return self.reject(**args)
         if name == 'submit':
             return self.submit(**args)
+        if name == 'solve':
+            # Structural attack. This is knowledge rather than labour: it either works in a handful
+            # of evaluations or it reports that the construction offers no such handle.
+            with self.connect() as db:
+                active = db.execute("SELECT id,public FROM challenges WHERE state='ACTIVE' "
+                                    "ORDER BY id DESC LIMIT 1").fetchone()
+            if not active:
+                raise Denied('no active challenge')
+            public = json.loads(active['public'])
+            if 'spec' not in public:
+                raise Denied('blackbox challenge: no construction to analyse')
+            program = public['spec']['program']
+            bits = public.get('key_bits', self.key_bits)
+            pair = (bytes.fromhex(public['known_plaintext']), bytes.fromhex(public['known_ciphertext']))
+            key = gf2_linear_attack(program, bits, pair)
+            if key is None:
+                with self.tx() as db:
+                    self.event(db, 'attack_failed', {'challenge': active['id'],
+                                                     'reason': 'no structural attack for this construction'})
+                return {'strategy': None, 'reason': 'no structural attack for this construction'}
+            width = max(1, bits // 8)
+            plaintext = transform(bytes.fromhex(public['ciphertext']), key.to_bytes(width, 'big'),
+                                  program, True).hex()
+            with self.tx() as db:
+                db.execute('INSERT INTO derivations(challenge,role,program,solutions,created,strategy) '
+                           'VALUES(?,?,?,?,?,?)',
+                           (active['id'], role, packed(program),
+                            packed([{'plaintext': plaintext, 'key': key}]), time.time(), 'gf2_linear'))
+                self.event(db, 'derivation_recorded', {'challenge': active['id'], 'role': role,
+                                                       'solutions': 1, 'strategy': 'gf2_linear',
+                                                       'evaluations': bits + 1})
+            return {'strategy': 'gf2_linear', 'key': key, 'plaintext': plaintext,
+                    'evaluations': bits + 1}
+
         if name == 'compute':
             # Bounded cryptanalysis: no interpreter, no filesystem, no network. The search is capped
             # and says so, rather than running until the turn budget dies.
@@ -426,9 +465,10 @@ class Engine:
                     solutions.append({'plaintext': transform(target, probe, program, True).hex(), 'key': k})
             with self.tx() as db:
                 if active:
-                    db.execute('INSERT INTO derivations(challenge,role,program,solutions,created) '
-                               'VALUES(?,?,?,?,?)',
-                               (active['id'], role, packed(program), packed(solutions), time.time()))
+                    db.execute('INSERT INTO derivations(challenge,role,program,solutions,created,strategy) '
+                               'VALUES(?,?,?,?,?,?)',
+                               (active['id'], role, packed(program), packed(solutions), time.time(),
+                                'enumeration'))
                     self.event(db, 'derivation_recorded', {'challenge': active['id'], 'role': role,
                                                            'solutions': len(solutions),
                                                            'searched': budget,

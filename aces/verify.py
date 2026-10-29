@@ -112,11 +112,105 @@ def verify_plaintext(secret_plaintext_hex, submitted_hex):
     return len(a) == len(b) and hashlib.sha256(a.encode()).hexdigest() == hashlib.sha256(b.encode()).hexdigest()
 
 
-# Named attack methods the verifier can check against a derivation. A method outside this set
-# cannot be verified, so it cannot ground a breach.
-METHODS = ('known_plaintext_key_search', 'chosen_plaintext_search', 'algebraic_inversion',
-           'distinguishing_statistic', 'implementation_defect')
+METHODS = ('known_plaintext_key_search', 'gf2_linear', 'chosen_plaintext_search',
+           'algebraic_inversion', 'distinguishing_statistic', 'implementation_defect')
+
+# A method is "structural" when it does better than trying every key. Enumeration is labour; a
+# structural method is knowledge, and only knowledge counts as a breach.
+STRUCTURAL = ('gf2_linear',)
 
 
 def valid_method(method):
     return method in METHODS
+
+
+LINEAR_OPS = ('xor', 'xor_key', 'chain_xor', 'rol')
+
+
+def _bits(data):
+    out = []
+    for byte in data:
+        for i in range(8):
+            out.append((byte >> i) & 1)
+    return out
+
+
+def _xor_bytes(a, b):
+    return bytes(x ^ y for x, y in zip(a, b))
+
+
+def is_gf2_linear(program):
+    """True when every step is affine over GF(2) in (key, data): xor/rol/chain_xor only.
+
+    add, add_key and chain_add carry between bits, which breaks linearity and with it the linear
+    attack. A Generator that includes one of them forces an attack other than linear algebra.
+    """
+    return all(op in LINEAR_OPS for op, _ in program)
+
+
+def _solve_gf2(columns, target, nvars):
+    """Solve sum_j k_j * columns[j] == target over GF(2). Returns the key or None."""
+    bits = [_bits(c) for c in columns]
+    t = _bits(target)
+    rows = []
+    for r in range(len(t)):
+        row = 0
+        for j in range(nvars):
+            if bits[j][r]:
+                row |= 1 << j
+        if t[r]:
+            row |= 1 << nvars
+        rows.append(row)
+
+    pivot_row = 0
+    where = [-1] * nvars
+    for col in range(nvars):
+        sel = next((i for i in range(pivot_row, len(rows)) if (rows[i] >> col) & 1), None)
+        if sel is None:
+            continue
+        rows[pivot_row], rows[sel] = rows[sel], rows[pivot_row]
+        for i in range(len(rows)):
+            if i != pivot_row and (rows[i] >> col) & 1:
+                rows[i] ^= rows[pivot_row]
+        where[col] = pivot_row
+        pivot_row += 1
+
+    mask = (1 << nvars) - 1
+    for row in rows:
+        if (row & mask) == 0 and ((row >> nvars) & 1):
+            return None                      # inconsistent: not affine in the key
+    if pivot_row < nvars:
+        return None                          # underdetermined: more than one key fits
+    key = 0
+    for col in range(nvars):
+        row = rows[where[col]]
+        if (row >> nvars) & 1:
+            key |= 1 << col
+    return key
+
+
+def gf2_linear_attack(program, key_bits, pair):
+    """Recover the key from one known pair when the construction is GF(2)-affine.
+
+    Cost is key_bits + 1 evaluations of the permutation plus Gaussian elimination: for a 32-bit key
+    that is 33 permutations instead of 2^32. This is what "a method that beats enumeration" means
+    concretely.
+    """
+    validate(program)
+    if not is_gf2_linear(program):
+        return None
+    plaintext, ciphertext = pair
+    width = max(1, key_bits // 8)
+    zero = bytes(width)
+    base = transform(plaintext, zero, program)
+    columns = []
+    for j in range(key_bits):
+        key = (1 << j).to_bytes(width, 'big')
+        columns.append(_xor_bytes(transform(plaintext, key, program), base))
+    recovered = _solve_gf2(columns, _xor_bytes(ciphertext, base), key_bits)
+    if recovered is None:
+        return None
+    probe = recovered.to_bytes(width, 'big')
+    if transform(plaintext, probe, program) != ciphertext:
+        return None
+    return recovered

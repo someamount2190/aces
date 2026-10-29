@@ -134,3 +134,9 @@ DOMAIN_EVENTS = (
 def apply(db):
     """Create or migrate. Idempotent; safe to call on every open."""
     db.executescript(SCHEMA)
+    columns = {row[1] for row in db.execute('PRAGMA table_info(derivations)')}
+    if 'strategy' not in columns:
+        # Older databases recorded derivations without saying how they were obtained. Everything
+        # they hold came from the enumerator, which is the honest default.
+        db.execute("ALTER TABLE derivations ADD COLUMN strategy TEXT NOT NULL DEFAULT 'enumeration'")
+        db.commit()

@@ -317,6 +317,19 @@ The gate will now accept a construction that is not byte-local, and nothing can 
 has moved from construction to attack capability. That is the honest state of a system whose solver is an
 enumerator and whose cipher now has a key space the enumerator cannot cross.
 
+**Enumeration is not a breach.** `compute` records its derivations with `strategy='enumeration'`; a
+submission grounded only in such a derivation is rejected as `enumeration_is_not_a_breach`, even when the
+answer is correct. Trying every key is labour, and labour does not teach the Generator anything about the
+construction. A breach requires a derivation whose `strategy` is structural, and the named method must be
+that strategy.
+
+The first structural attack is `solve` / `gf2_linear`: if a program contains only `xor`, `xor_key`,
+`chain_xor` and `rol`, the map is affine over GF(2) in (key, data), so a single known pair determines the key
+by Gaussian elimination — 33 evaluations for a 32-bit key instead of 2^32. A program containing any addition
+(`add`, `add_key`, `chain_add`) is not affine and `solve` returns no strategy. This is the pressure that makes
+the construction space interesting: linearity is free to detect and fatal to ship, and non-linearity plus
+cross-byte mixing is the minimum for a construction to survive.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.

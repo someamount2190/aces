@@ -73,12 +73,8 @@ class PumpTests(unittest.TestCase):
         return cid
 
     def attack(self):
-        public = self.e.view('adversary')['challenge']['public']
-        args = {'program': public['spec']['program'],
-                'known_plaintext': public['known_plaintext'],
-                'known_ciphertext': public['known_ciphertext'],
-                'ciphertext': public['ciphertext']}
-        return self.e.tool('adversary', 'compute', args)['solutions'][0]['plaintext']
+        """The structural attack: one known pair, 33 evaluations, no enumeration."""
+        return self.e.tool('adversary', 'solve', {})['plaintext']
 
     def test_invalid_attack_earns_nothing(self):
         cid = self.cycle()
@@ -96,7 +92,7 @@ class PumpTests(unittest.TestCase):
         plain = self.attack()
         out = deliver(self.e, adversary['work_id'],
                       json.dumps({'tool': 'submit', 'args': {'challenge': cid, 'plaintext': plain,
-                                                             'method': 'known_plaintext_key_search',
+                                                             'method': 'gf2_linear',
                                                              'detail': 'exhaustive 8-bit key scan on the known pair'}}))
         self.assertTrue(out['result']['verified'])
         self.assertEqual(self.e.view('adversary')['candy'], 1)
@@ -145,7 +141,7 @@ class PumpTests(unittest.TestCase):
     def test_restart_preserves_state_without_duplication(self):
         cid = self.cycle()
         plain = self.attack()
-        self.assertTrue(self.e.submit(cid, plain, method='known_plaintext_key_search')['verified'])
+        self.assertTrue(self.e.submit(cid, plain, method='gf2_linear')['verified'])
         reopened = Engine(self.path, key_bits=16)
         self.assertEqual(reopened.view('adversary')['candy'], 1)
         self.assertEqual(reopened.view('adversary')['challenge']['state'], 'BREACHED')
@@ -161,7 +157,7 @@ class PumpTests(unittest.TestCase):
     def test_sanitized_failure_hides_the_recovered_secret(self):
         cid = self.cycle()
         plain = self.attack()
-        self.e.submit(cid, plain, method='known_plaintext_key_search')
+        self.e.submit(cid, plain, method='gf2_linear')
         failures = self.e.view('integrator')['verified_failures']
         self.assertEqual(len(failures), 1)
         self.assertNotIn('plaintext', failures[0])
@@ -211,7 +207,7 @@ class PumpTests(unittest.TestCase):
         """The invariant the Warden audits, asserted deterministically so a leak cannot ship."""
         cid = self.cycle()
         plain = self.attack()
-        self.e.submit(cid, plain, method='known_plaintext_key_search')
+        self.e.submit(cid, plain, method='gf2_linear')
         with self.e.connect() as db:
             secret = json.loads(db.execute('SELECT secret FROM challenges WHERE id=?', (cid,)).fetchone()[0])
             rows = db.execute('SELECT role,projection FROM dispatches').fetchall()
@@ -260,17 +256,17 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
         # rejection does not consume the challenge: a traced answer still counts
         self.attack()
-        self.assertTrue(self.e.submit(cid, plain, method='known_plaintext_key_search')['verified'])
+        self.assertTrue(self.e.submit(cid, plain, method='gf2_linear')['verified'])
 
     def test_breach_records_how_it_was_reached(self):
         cid = self.cycle()
-        self.e.submit(cid, self.attack(), method='known_plaintext_key_search',
+        self.e.submit(cid, self.attack(), method='gf2_linear',
                       detail='exhaustive key scan against the published pair')
         with self.e.connect() as db:
             event = json.loads(db.execute(
                 "SELECT data FROM events WHERE kind='breach_confirmed'").fetchone()[0])
             methods = [dict(r) for r in db.execute('SELECT method,detail FROM methods')]
-        self.assertEqual(event['method'], 'known_plaintext_key_search')
+        self.assertEqual(event['method'], 'gf2_linear')
         self.assertEqual(len(methods), 1)
         self.assertIn('exhaustive key scan', methods[0]['detail'])
 
@@ -285,17 +281,38 @@ class PumpTests(unittest.TestCase):
 
     def test_named_method_must_match_the_derivation(self):
         cid = self.cycle()
-        plain = self.attack()
-        with self.e.tx() as db:      # a derivation that never used the published permutation
-            db.execute('UPDATE derivations SET program=?', (json.dumps([['xor', 1]]),))
-        self.assertEqual(self.e.submit(cid, plain, method='known_plaintext_key_search')['reason'],
-                         'method_mismatch')
+        plain = self.attack()          # this derivation came from the structural attack
+        out = self.e.submit(cid, plain, method='known_plaintext_key_search')
+        self.assertEqual(out['reason'], 'method_mismatch')
+
+    def test_enumeration_is_not_a_breach(self):
+        """Trying every key is labour. Finding structure is knowledge, and only that pays."""
+        cid = self.cycle()
+        public = self.e.view('adversary')['challenge']['public']
+        found = self.e.tool('adversary', 'compute', {
+            'program': public['spec']['program'],
+            'known_plaintext': public['known_plaintext'],
+            'known_ciphertext': public['known_ciphertext'],
+            'ciphertext': public['ciphertext']})['solutions']
+        self.assertTrue(found)                     # the search did find the key
+        out = self.e.submit(cid, found[0]['plaintext'], method='known_plaintext_key_search')
+        self.assertEqual(out['reason'], 'enumeration_is_not_a_breach')
+        self.assertEqual(self.e.view('adversary')['candy'], 0)
+        self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
+
+    def test_a_non_linear_construction_resists_the_linear_attack(self):
+        nl = dict(SPEC, name='nonlinear', program=[['xor_key', 0], ['chain_add', 0], ['add_key', 0]])
+        cid = self.e.register(nl)['candidate']
+        self.e.publish(cid)
+        out = self.e.tool('adversary', 'solve', {})
+        self.assertIsNone(out['strategy'])
+        self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
 
     def test_generator_learns_which_method_broke_each_challenge(self):
         cid = self.cycle()
-        self.e.submit(cid, self.attack(), method='known_plaintext_key_search')
+        self.e.submit(cid, self.attack(), method='gf2_linear')
         self.assertEqual(self.e.view('generator')['failures'],
-                         [{'challenge': cid, 'method': 'known_plaintext_key_search'}])
+                         [{'challenge': cid, 'method': 'gf2_linear'}])
 
     def test_rejection_blocks_publication(self):
         """The Integrator's gate binds: a refused candidate cannot be published at all."""
@@ -393,5 +410,6 @@ class PumpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

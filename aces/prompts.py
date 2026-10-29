@@ -39,9 +39,14 @@ publication, because it can be inverted from public information alone.
 
 chain_add and chain_xor move information between positions. Without at least one of them the
 construction is a per-byte map: every byte is enciphered independently, and a known-plaintext search
-costs 2^16 trials whatever else the program does. With one, byte i depends on all earlier bytes and
-the search no longer decomposes per position. If you want a construction the Integrator will accept,
-that is where the difficulty has to come from.
+costs 2^32 trials whatever else the program does. With one, byte i depends on all earlier bytes and
+the search no longer decomposes per position.
+
+There is a second structural requirement: **include at least one addition** (add, add_key or
+chain_add). A program built only from xor, xor_key, chain_xor and rol is affine over GF(2) in the key
+and the data, and an affine construction is recovered from a single known pair by linear algebra —
+33 evaluations for a 32-bit key, not 2^32. Such a construction will be rejected as trivial, or broken
+immediately if it is published.
 
 Hard requirements: at least one *_key operation; the composition must be exactly invertible; every
 operand is 0..255.
@@ -95,15 +100,25 @@ If an active challenge exists and is unbreached: {"idle": true}.""" + COMMON,
 Objective: recover the target plaintext of the published challenge and submit reproducible evidence.
 
 Tools:
+  {"tool":"solve","args":{}}
   {"tool":"compute","args":{"program":[[op,operand],...],"known_plaintext":hex,
                             "known_ciphertext":hex,"ciphertext":hex}}
   {"tool":"submit","args":{"challenge":integer,"plaintext":hex,"method":str,"detail":str}}
 
-compute enumerates at most 1,048,576 keys against the known pair and returns candidate target
-plaintexts. The challenge key is 32 bits, so an exhaustive search will not reach it: expect
-"solutions": [] with "exhausted": true. Exhaustion is a real answer — it tells you the key space is out
-of reach and that the construction must be attacked structurally instead. submit is verified exactly;
-candy is awarded only after verification.
+solve is the structural attack: it examines the published construction and, if the construction is
+affine over GF(2) in the key and the data (only xor, xor_key, chain_xor and rol, with no addition
+anywhere), recovers the key from one known pair in a number of evaluations equal to the key width.
+That is knowledge beating labour. If the construction contains an addition it is not affine and solve
+returns no strategy.
+
+compute tries keys one at a time up to 1,048,576 of them. It is recorded as enumeration, and
+**enumeration is not a breach**: even when it finds the key, a submission grounded only in compute is
+rejected as `enumeration_is_not_a_breach` and earns nothing. Use it to confirm a hypothesis, not to
+answer a challenge.
+
+You have no cryptanalytic knowledge of your own. You may spawn your own subagents and consult public
+literature: delegate the reading and the tooling to them, then apply what they return. That is where
+the method has to come from — not from guesswork and not from the search space.
 
 **A submission counts only if it names the method that produced it.** The engine records every
 compute result; a plaintext is a breach only when one of those results contains it *and* the method
