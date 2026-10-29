@@ -605,10 +605,20 @@ class Engine:
                     raise ValueError('unknown hypothesis')
                 if row['status'] != 'open':
                     return {'hypothesis': hid, 'status': row['status'], 'note': 'already resolved'}
-                db.execute('UPDATE hypotheses SET status=?,evidence=?,resolved=? WHERE id=?',
-                           (status, (args.get('evidence') or '')[:2000], time.time(), hid))
-                self.event(db, 'hypothesis_resolved', {'hypothesis': hid, 'status': status})
-            return {'hypothesis': hid, 'status': status}
+                # A hypothesis is resolved by work, not by argument. At least one completed run must
+                # exist after the hypothesis was opened, so "I tried it" is a fact about the record
+                # rather than a claim in a sentence.
+                item = db.execute(
+                    "SELECT id FROM work_items WHERE role=? AND status='DONE' AND created>=? "
+                    "ORDER BY created DESC LIMIT 1", (role, row['created'])).fetchone()
+                if not item:
+                    raise Denied('experiment_required: no completed run since this hypothesis was opened')
+                db.execute('UPDATE hypotheses SET status=?,evidence=?,resolved=?,work_item=? WHERE id=?',
+                           (status, (args.get('evidence') or '')[:2000], time.time(),
+                            item['id'], hid))
+                self.event(db, 'hypothesis_resolved', {'hypothesis': hid, 'status': status,
+                                                       'work_item': item['id']})
+            return {'hypothesis': hid, 'status': status, 'work_item': item['id']}
 
         if name == 'compute':
             # Bounded cryptanalysis: no interpreter, no filesystem, no network. The search is capped

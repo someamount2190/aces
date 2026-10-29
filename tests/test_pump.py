@@ -475,6 +475,7 @@ class PumpTests(unittest.TestCase):
             'weakness': 'forward-causal chain', 'attack': 'sequential_recovery',
             'predicted': 'key bytes recovered in position order'})
         self.assertEqual(opened['status'], 'open')
+        self.experiment()
         resolved = self.e.tool('adversary', 'resolve', {
             'hypothesis': opened['hypothesis'], 'status': 'refuted', 'evidence': 'no prefix match'})
         self.assertEqual(resolved['status'], 'refuted')
@@ -561,6 +562,7 @@ class PumpTests(unittest.TestCase):
         opened = self.e.tool('adversary', 'hypothesize', {
             'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
         self.assertEqual(self.e.hypotheses_awaiting_review(), 0)      # still open: nothing to judge
+        self.experiment()
         self.e.tool('adversary', 'resolve', {'hypothesis': opened['hypothesis'],
                                              'status': 'refuted', 'evidence': 'no prefix match'})
         self.assertEqual(self.e.hypotheses_awaiting_review(), 1)
@@ -586,6 +588,28 @@ class PumpTests(unittest.TestCase):
         self.e.tool('adversary', 'hypothesize', {'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
         second = self.by_role(dispatch(self.e))['adversary']
         self.assertEqual(deliver(self.e, second['work_id'], '{"idle": true}')['status'], 'idle')
+
+    def experiment(self):
+        """A completed run after the current moment, standing in for a tool call the engine saw."""
+        for pending in self.e.pending_work('adversary'):      # stale items would be reused by begin_work
+            self.e.abandon_work(pending['id'])
+        work = self.e.begin_work('adversary', 0)
+        self.e.finish_work(work, '{"tool":"solve","args":{}}', 'tool_executed')
+        return work
+
+    def test_resolve_requires_a_run_after_the_hypothesis(self):
+        """RUN-013: a refutation was asserted from a docstring, with no experiment behind it."""
+        self.cycle()
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
+        with self.assertRaises(Denied):
+            self.e.tool('adversary', 'resolve', {
+                'hypothesis': opened['hypothesis'], 'status': 'refuted', 'evidence': 'read the docs'})
+        work = self.experiment()
+        out = self.e.tool('adversary', 'resolve', {
+            'hypothesis': opened['hypothesis'], 'status': 'refuted', 'evidence': 'ran it, no match'})
+        self.assertEqual(out['status'], 'refuted')
+        self.assertEqual(out['work_item'], work)
 
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))

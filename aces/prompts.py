@@ -104,8 +104,11 @@ If an active challenge exists and is unbreached: {"idle": true}.""" + COMMON,
 
 Objective: recover the target plaintext of the published challenge and submit reproducible evidence.
 
-Tools:
-  {"tool":"analyse","args":{"kind":"key_schedule"|"frequency"|"differential"|"pairs", ...}}
+Tools (exact argument shapes):
+  {"tool":"analyse","args":{"kind":"key_schedule"}}
+  {"tool":"analyse","args":{"kind":"frequency","samples":[hex,...]}}
+  {"tool":"analyse","args":{"kind":"differential","difference":hex,"pairs":integer}}
+  {"tool":"analyse","args":{"kind":"pairs","key":integer}}
   {"tool":"oracle","args":{"plaintexts":[hex,...]}}
   {"tool":"hypothesize","args":{"weakness":str,"attack":str,"predicted":str}}
   {"tool":"resolve","args":{"hypothesis":integer,"status":"confirmed"|"refuted","evidence":str}}
@@ -113,6 +116,14 @@ Tools:
   {"tool":"compute","args":{"program":[[op,operand],...],"known_plaintext":hex,
                             "known_ciphertext":hex,"ciphertext":hex}}
   {"tool":"submit","args":{"challenge":integer,"plaintext":hex,"method":str,"detail":str}}
+
+analyse differential takes a DIFFERENCE and a COUNT, not a list of pairs: it generates the pairs itself
+from a fixed base and returns an output-difference distribution {pairs, distinct_outputs, max_repeats,
+top}. It does not recover keys. analyse pairs takes a candidate key and checks it across several pairs.
+
+resolve is accepted only when a completed run exists after the hypothesis was opened. You cannot refute a
+hypothesis by reading the documentation: do the work, then resolve. If you resolve from a docstring the
+engine refuses with experiment_required, and that refusal is recorded.
 
 Work in this order, every time:
 
@@ -213,9 +224,11 @@ Flag **flawed** only when you can point at the step that was skipped, using one 
   premature_stop                - it stopped while an applicable tool remained unused
   other                         - say which step in the advice
 
+"flaw" must be EXACTLY one label from that list — no dash, no explanation, no punctuation appended. Put
+every word of explanation in "advice". A label with a sentence glued to it is rejected as unparseable.
+
 "advice" is one sentence: what to do differently next time, not what to conclude. It is shown to the
-Adversary on its next turn and a second review naming the same flaw is itself a process failure, so be
-specific enough to be actionable.""" + COMMON,
+Adversary on its next turn, so be specific enough to be actionable.""" + COMMON,
 
 'warden': """You are the Warden: a supervisory session that audits what the other roles were actually
 shown. You are not one of the four ecosystem agents and you have no authority over the experiment.

@@ -197,4 +197,8 @@ def apply(db):
         # Older databases recorded derivations without saying how they were obtained. Everything
         # they hold came from the enumerator, which is the honest default.
         db.execute("ALTER TABLE derivations ADD COLUMN strategy TEXT NOT NULL DEFAULT 'enumeration'")
-        db.commit()
+    hcols = {row[1] for row in db.execute('PRAGMA table_info(hypotheses)')}
+    if 'work_item' not in hcols:
+        # A refutation must point at the work that produced it, so "I tried it" is checkable.
+        db.execute('ALTER TABLE hypotheses ADD COLUMN work_item TEXT')
+    db.commit()
