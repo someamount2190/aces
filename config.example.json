@@ -1,0 +1,12 @@
+{
+  "base_url": "http://127.0.0.1:11434/v1",
+  "api_key_env": "ACES_API_KEY",
+  "max_turns_per_agent": 50,
+  "interval_seconds": 3,
+  "agents": {
+    "generator": {"model": "YOUR_MODEL", "max_tokens": 1200},
+    "integrator": {"model": "YOUR_MODEL", "max_tokens": 800},
+    "adversary": {"model": "YOUR_MODEL", "max_tokens": 1200},
+    "observer": {"model": "YOUR_MODEL", "max_tokens": 1200}
+  }
+}
