@@ -1,0 +1,1 @@
+{"tool":"resolve","args":{"hypothesis":1,"status":"refuted","evidence":"solve returned strategy=null, reason=\"no implemented strategy applies to this construction\", evaluations=0, seconds=0.0; analyse key_schedule had already reported causal=false, which excludes sequential_recovery, so the predicted 4096-evaluation sequential recovery did not and cannot run"}}
