@@ -95,7 +95,9 @@ class PumpTests(unittest.TestCase):
         adversary = self.by_role(dispatch(self.e))['adversary']
         plain = self.attack()
         out = deliver(self.e, adversary['work_id'],
-                      json.dumps({'tool': 'submit', 'args': {'challenge': cid, 'plaintext': plain}}))
+                      json.dumps({'tool': 'submit', 'args': {'challenge': cid, 'plaintext': plain,
+                                                             'method': 'known_plaintext_key_search',
+                                                             'detail': 'exhaustive 8-bit key scan on the known pair'}}))
         self.assertTrue(out['result']['verified'])
         self.assertEqual(self.e.view('adversary')['candy'], 1)
         self.assertEqual(self.e.view('adversary')['challenge']['state'], 'BREACHED')
@@ -143,7 +145,7 @@ class PumpTests(unittest.TestCase):
     def test_restart_preserves_state_without_duplication(self):
         cid = self.cycle()
         plain = self.attack()
-        self.assertTrue(self.e.submit(cid, plain)['verified'])
+        self.assertTrue(self.e.submit(cid, plain, method='known_plaintext_key_search')['verified'])
         reopened = Engine(self.path)
         self.assertEqual(reopened.view('adversary')['candy'], 1)
         self.assertEqual(reopened.view('adversary')['challenge']['state'], 'BREACHED')
@@ -159,7 +161,7 @@ class PumpTests(unittest.TestCase):
     def test_sanitized_failure_hides_the_recovered_secret(self):
         cid = self.cycle()
         plain = self.attack()
-        self.e.submit(cid, plain)
+        self.e.submit(cid, plain, method='known_plaintext_key_search')
         failures = self.e.view('integrator')['verified_failures']
         self.assertEqual(len(failures), 1)
         self.assertNotIn('plaintext', failures[0])
@@ -209,7 +211,7 @@ class PumpTests(unittest.TestCase):
         """The invariant the Warden audits, asserted deterministically so a leak cannot ship."""
         cid = self.cycle()
         plain = self.attack()
-        self.e.submit(cid, plain)
+        self.e.submit(cid, plain, method='known_plaintext_key_search')
         with self.e.connect() as db:
             secret = json.loads(db.execute('SELECT secret FROM challenges WHERE id=?', (cid,)).fetchone()[0])
             rows = db.execute('SELECT role,projection FROM dispatches').fetchall()
@@ -258,15 +260,42 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
         # rejection does not consume the challenge: a traced answer still counts
         self.attack()
-        self.assertTrue(self.e.submit(cid, plain)['verified'])
+        self.assertTrue(self.e.submit(cid, plain, method='known_plaintext_key_search')['verified'])
 
     def test_breach_records_how_it_was_reached(self):
         cid = self.cycle()
-        self.e.submit(cid, self.attack())
+        self.e.submit(cid, self.attack(), method='known_plaintext_key_search',
+                      detail='exhaustive key scan against the published pair')
         with self.e.connect() as db:
             event = json.loads(db.execute(
                 "SELECT data FROM events WHERE kind='breach_confirmed'").fetchone()[0])
-        self.assertEqual(event['method'], 'tool_compute')
+            methods = [dict(r) for r in db.execute('SELECT method,detail FROM methods')]
+        self.assertEqual(event['method'], 'known_plaintext_key_search')
+        self.assertEqual(len(methods), 1)
+        self.assertIn('exhaustive key scan', methods[0]['detail'])
+
+    def test_breach_requires_a_named_verifiable_method(self):
+        """An answer with no method teaches the Generator nothing, so it is not a breach."""
+        cid = self.cycle()
+        plain = self.attack()
+        self.assertEqual(self.e.submit(cid, plain)['reason'], 'no_method')
+        self.assertEqual(self.e.submit(cid, plain, method='divination')['reason'], 'unverified_method')
+        self.assertEqual(self.e.view('adversary')['candy'], 0)
+        self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
+
+    def test_named_method_must_match_the_derivation(self):
+        cid = self.cycle()
+        plain = self.attack()
+        with self.e.tx() as db:      # a derivation that never used the published permutation
+            db.execute('UPDATE derivations SET program=?', (json.dumps([['xor', 1]]),))
+        self.assertEqual(self.e.submit(cid, plain, method='known_plaintext_key_search')['reason'],
+                         'method_mismatch')
+
+    def test_generator_learns_which_method_broke_each_challenge(self):
+        cid = self.cycle()
+        self.e.submit(cid, self.attack(), method='known_plaintext_key_search')
+        self.assertEqual(self.e.view('generator')['failures'],
+                         [{'challenge': cid, 'method': 'known_plaintext_key_search'}])
 
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
@@ -280,3 +309,4 @@ class PumpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

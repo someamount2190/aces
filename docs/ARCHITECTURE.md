@@ -269,6 +269,16 @@ way — worked out in the session, computed with the session's own tools, or rea
 have been — is rejected with `no_derivation_trace`: no candy, no state change, and the challenge stays
 ACTIVE so a traced attempt can still succeed.
 
+**Method gate.** A breach is a claim about *how* a construction fails, not merely that it did. A submission
+must therefore name a method from a fixed vocabulary (`known_plaintext_key_search`,
+`chosen_plaintext_search`, `algebraic_inversion`, `distinguishing_statistic`, `implementation_defect`), and
+the name must agree with the derivation: a claim of known-plaintext search whose recorded permutation is not
+the published one is rejected as `method_mismatch`. A correct answer with no method is rejected as
+`no_method`; an unknown method as `unverified_method`. The method is written to `methods` and appears in
+`breach_confirmed`, and the Generator's projection carries `failures` — one entry per challenge that fell,
+naming the method that broke it — so the next construction can be aimed at that method rather than at
+something that merely looks harder.
+
 This exists because a subagent can run its own arithmetic. Without the gate, a legitimate offline solve and
 a leaked secret are the same event to the verifier (run 002 demonstrated exactly that). With it, the answer
 is re-derived by our code from the challenge itself, so correctness rests on the tool's search rather than

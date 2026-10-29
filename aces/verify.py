@@ -68,5 +68,11 @@ def verify_plaintext(secret_plaintext_hex, submitted_hex):
     return len(a) == len(b) and hashlib.sha256(a.encode()).hexdigest() == hashlib.sha256(b.encode()).hexdigest()
 
 
-def digest(record, packed):
-    return hashlib.sha256(packed(record).encode()).hexdigest()
+# Named attack methods the verifier can check against a derivation. A method outside this set
+# cannot be verified, so it cannot ground a breach.
+METHODS = ('known_plaintext_key_search', 'chosen_plaintext_search', 'algebraic_inversion',
+           'distinguishing_statistic', 'implementation_defect')
+
+
+def valid_method(method):
+    return method in METHODS

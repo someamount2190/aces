@@ -6,7 +6,8 @@ Verification lives in `verify.py`; scheduling and dispatch live in `pump.py`.
 import contextlib, hashlib, json, secrets, sqlite3, time
 
 from .schema import apply, DOMAIN_EVENTS
-from .verify import transform, validate, is_reversible, has_secret_term, verify_plaintext
+from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
+                     valid_method)
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
@@ -34,6 +35,17 @@ class Denied(ValueError):
     pass
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """sqlite3's context manager commits but does not close. On Windows an unclosed handle keeps
+    the database file locked, which breaks cleanup and, over a long run, leaks descriptors."""
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 class Engine:
     def __init__(self, path):
         self.path = str(path)
@@ -44,7 +56,7 @@ class Engine:
 
     # ---- plumbing -------------------------------------------------------------------------
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=15)
+        db = sqlite3.connect(self.path, timeout=15, factory=_ClosingConnection)
         db.row_factory = sqlite3.Row
         return db
 
@@ -223,8 +235,13 @@ class Engine:
             self.event(db, 'published', {'challenge': cid, 'parent': parent, 'mode': mode})
         return {'challenge': cid}
 
-    def submit(self, challenge, plaintext):
-        """One transactional verdict: state change, reward, breach record, events — or nothing."""
+    def submit(self, challenge, plaintext, method=None, detail=None):
+        """One transactional verdict: state change, method record, reward, events — or nothing.
+
+        A breach now needs three things, not one: the right answer, a derivation that produced it,
+        and a named method the verifier can check against that derivation. An answer with no method
+        is not a result — it tells the Generator nothing about what to defend against.
+        """
         if not isinstance(plaintext, str) or len(plaintext) > 8192:
             raise ValueError('invalid submission')
         try:
@@ -242,19 +259,28 @@ class Engine:
             if row['state'] != 'ACTIVE':
                 raise Denied('challenge unavailable')
             matched = verify_plaintext(json.loads(row['secret'])['plaintext'], plaintext)
-            derived = False
-            for r in db.execute('SELECT solutions FROM derivations WHERE challenge=?', (challenge,)):
-                if plaintext in {s.get('plaintext') for s in json.loads(r[0])}:
-                    derived = True
+
+            derivation_program, derived = None, False
+            for r in db.execute('SELECT program,solutions FROM derivations WHERE challenge=?', (challenge,)):
+                if plaintext in {s.get('plaintext') for s in json.loads(r['solutions'])}:
+                    derivation_program, derived = json.loads(r['program']), True
                     break
+
+            def reject(reason):
+                self.event(db, 'submission_rejected', {'challenge': challenge, 'reason': reason})
+                return {'verified': False, 'reason': reason}
+
             if matched and not derived:
-                # The answer is right but nothing shows it came from the declared tool path. A correct
-                # answer the adversary computed (or read) elsewhere is not evidence of cryptanalysis,
-                # so it earns nothing and does not consume the challenge. No row is written, so a
-                # submission after a real compute is still accepted.
-                self.event(db, 'submission_rejected', {'challenge': challenge,
-                                                       'reason': 'no_derivation_trace'})
-                return {'verified': False, 'reason': 'no_derivation_trace'}
+                return reject('no_derivation_trace')
+            if matched and not method:
+                return reject('no_method')
+            if matched and not valid_method(method):
+                return reject('unverified_method')
+            public = json.loads(row['public'])
+            published = public.get('spec', {}).get('program')
+            if matched and method == 'known_plaintext_key_search' and published and derivation_program != published:
+                return reject('method_mismatch')
+
             valid = matched and derived
             sid = db.execute('INSERT INTO submissions(challenge,evidence,valid) VALUES(?,?,?)',
                              (challenge, plaintext, int(valid))).lastrowid
@@ -262,11 +288,13 @@ class Engine:
             if valid:
                 db.execute("UPDATE challenges SET state='BREACHED' WHERE id=?", (challenge,))
                 db.execute('INSERT INTO rewards(challenge,submission) VALUES(?,?)', (challenge, sid))
+                db.execute('INSERT INTO methods(challenge,submission,method,detail,created) VALUES(?,?,?,?,?)',
+                           (challenge, sid, method, (detail or '')[:2000], time.time()))
                 self.event(db, 'breach_confirmed', {'challenge': challenge, 'category': 'plaintext_recovery',
                                                     'verification': 'exact comparison with committed target',
-                                                    'method': 'tool_compute',
+                                                    'method': method,
                                                     'escalation_authorized': True})
-        return {'verified': valid, 'duplicate': False}
+        return {'verified': valid, 'duplicate': False, 'method': method if valid else None}
 
     # ---- projections ----------------------------------------------------------------------
     def view(self, role):
@@ -303,7 +331,11 @@ class Engine:
                             for r in db.execute("SELECT data FROM events WHERE kind='breach_confirmed'")]
                 return {'challenge': challenge, 'catalog': catalog, 'verified_failures': failures}
             if role == 'generator':
-                return {'catalog': catalog,
+                # How each challenge fell, so the next construction can be built against the method
+                # rather than against the answer. A breach without a method would teach nothing.
+                failures = [{'challenge': r['challenge'], 'method': r['method']}
+                            for r in db.execute('SELECT challenge,method FROM methods ORDER BY id')]
+                return {'catalog': catalog, 'failures': failures,
                         'feedback': [json.loads(r[0]) for r in db.execute('SELECT data FROM feedback')]}
             return {'events': [dict(r) for r in db.execute(
                         'SELECT * FROM events WHERE id > ? ORDER BY id LIMIT ?',

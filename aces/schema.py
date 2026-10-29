@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS derivations(
     solutions TEXT NOT NULL,
     created REAL NOT NULL);
 
+-- How a breach was achieved, named by the attacker and checked against the derivation.
+-- A breach without a method is not a result: it teaches the Generator nothing, so the next
+-- construction cannot be built against it.
+CREATE TABLE IF NOT EXISTS methods(
+    id INTEGER PRIMARY KEY,
+    challenge INTEGER NOT NULL,
+    submission INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    detail TEXT,
+    created REAL NOT NULL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 
