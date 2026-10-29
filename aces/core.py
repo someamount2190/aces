@@ -240,11 +240,11 @@ class Engine:
                 # This is the only view that can compare a projection against the secret it should
                 # not contain, which is precisely why it cannot act on the experiment.
                 ledger = db.execute('SELECT id,role,work_id,projection,created FROM dispatches '
-                                    'ORDER BY id DESC LIMIT 20').fetchall()
+                                    'ORDER BY id DESC LIMIT 4').fetchall()
                 return {'dispatches': [{'id': r['id'], 'role': r['role'], 'work_id': r['work_id'],
-                                        'projection': r['projection'][:6000], 'created': r['created']}
+                                        'projection': r['projection'][:4000], 'created': r['created']}
                                        for r in ledger],
-                        'events': [dict(r) for r in db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 60')],
+                        'events': [dict(r) for r in db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 12')],
                         'leaks': [dict(r) for r in db.execute('SELECT * FROM leaks ORDER BY id')]}
             latest = db.execute('SELECT id,state,public,parent FROM challenges ORDER BY id DESC LIMIT 1').fetchone()
             challenge = None if not latest else dict(latest)

@@ -148,6 +148,7 @@ def status(engine):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python -m aces.pump', description='ACES dispatch pump')
     parser.add_argument('--db', required=True)
+    parser.add_argument('--out', help='write JSON to this file (UTF-8) instead of stdout')
     sub = parser.add_subparsers(dest='command', required=True)
 
     d = sub.add_parser('dispatch', help='list work for roles that need it')
@@ -155,7 +156,9 @@ def main(argv=None):
 
     w = sub.add_parser('deliver', help='commit one answer')
     w.add_argument('--work-id', required=True)
-    w.add_argument('--answer', required=True)
+    group = w.add_mutually_exclusive_group(required=True)
+    group.add_argument('--answer')
+    group.add_argument('--answer-file', help='read the answer from this UTF-8 file')
 
     sub.add_parser('status', help='compact state')
 
@@ -172,16 +175,25 @@ def main(argv=None):
     elif args.command == 'audit':
         payload = audit(engine)
     elif args.command == 'deliver':
-        payload = deliver(engine, args.work_id, args.answer)
+        if args.answer_file:
+            from pathlib import Path
+            answer = Path(args.answer_file).read_text(encoding='utf-8')
+        else:
+            answer = args.answer
+        payload = deliver(engine, args.work_id, answer)
     elif args.command == 'status':
         payload = status(engine)
     else:
         payload = {'abandoned': engine.abandon_stale(args.minutes * 60)}
 
+    if args.out:
+        from pathlib import Path
+        Path(args.out).write_text(json.dumps(payload, indent=2), encoding='utf-8')
+        print(f'wrote {args.out}')
+        return 0
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write('\n')
     return 0
-
 
 if __name__ == '__main__':
     raise SystemExit(main())
