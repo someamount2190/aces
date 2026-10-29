@@ -236,6 +236,15 @@ class PumpTests(unittest.TestCase):
         ids = [e['id'] for e in self.e.view('observer')['events']]
         self.assertTrue(all(i > cursor for i in ids), ids)
 
+    def test_recover_by_work_id_leaves_other_dispatches_alone(self):
+        """run-002: recover --minutes 0 swept four live items when one was meant."""
+        work = self.by_role(dispatch(self.e))
+        target = work['generator']['work_id']
+        self.assertEqual(self.e.abandon_work(target), 1)
+        self.assertEqual(self.e.work_item(target)['status'], 'ABANDONED')
+        self.assertEqual([w['role'] for w in self.e.pending_work()], ['observer'])
+        self.assertEqual(self.e.abandon_work(target), 0)   # idempotent, not an error
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

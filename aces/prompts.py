@@ -23,17 +23,24 @@ Tool: {"tool":"register","args":{"spec":{"name":str,"program":[[op,operand],...]
 "limitations":str,"math":str,"assumptions":str}}}
 
 The program is 1..32 straight-line steps from this fixed set (no names, imports, loops or I/O):
-  ["xor_key",n]  xor with the secret 8-bit key (operand required, ignored)
-  ["add_key",n]  add the secret key modulo 256
-  ["xor",n]      xor with a constant byte
-  ["add",n]      add a constant byte modulo 256
+  ["xor_key",n]  XOR each byte with the SECRET key byte that the engine holds
+  ["add_key",n]  ADD the SECRET key byte, modulo 256
+  ["xor",n]      XOR with the public constant n
+  ["add",n]      ADD the public constant n, modulo 256
   ["rol",n]      rotate the byte left by n bits
 
-Hard requirements: at least one *_key operation (a construction that ignores the key is not a
-challenge); the composition must be exactly invertible; every operand is 0..255.
+The operand of a *_key step is a PLACEHOLDER: the engine ignores it and substitutes the secret key,
+which is different for every challenge and is never shown to you. A program containing at least one
+*_key step is keyed. A program containing none is unkeyed and will be rejected at publication,
+because it can be inverted from public information alone.
 
-Write "limitations" as the failure mode you actually expect, not a disclaimer. Write "math" as why
-the composition is a bijection and how it inverts. Do not repeat a candidate already in your catalog.""" + COMMON,
+Hard requirements: at least one *_key operation; the composition must be exactly invertible; every
+operand is 0..255.
+
+Write "limitations" as the failure mode you actually expect, not a disclaimer. Do not describe a
+program that contains a *_key step as keyless — the key is secret even though you write a placeholder
+number in that operand. Write "math" as why the composition is a bijection and how it inverts. Do not
+repeat a candidate already in your catalog.""" + COMMON,
 
 'integrator': """You are the Integrator in an experimental cryptographic sandbox.
 

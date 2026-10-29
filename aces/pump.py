@@ -164,8 +164,9 @@ def main(argv=None):
 
     sub.add_parser('audit', help='claim a supervisory pass for the Warden')
 
-    r = sub.add_parser('recover', help='abandon stale dispatches')
+    r = sub.add_parser('recover', help='abandon stale dispatches, or one named dispatch')
     r.add_argument('--minutes', type=int, default=15)
+    r.add_argument('--work-id', help='abandon exactly this dispatch instead of sweeping by age')
 
     args = parser.parse_args(argv)
     engine = Engine(args.db)
@@ -184,7 +185,10 @@ def main(argv=None):
     elif args.command == 'status':
         payload = status(engine)
     else:
-        payload = {'abandoned': engine.abandon_stale(args.minutes * 60)}
+        if args.work_id:
+            payload = {'abandoned': engine.abandon_work(args.work_id), 'work_id': args.work_id}
+        else:
+            payload = {'abandoned': engine.abandon_stale(args.minutes * 60)}
 
     if args.out:
         from pathlib import Path

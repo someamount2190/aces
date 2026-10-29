@@ -147,6 +147,18 @@ class Engine:
                                              'outcome': outcome, 'error_type': error_type})
             return True
 
+    def abandon_work(self, work_id):
+        """Abandon exactly one dispatch. `abandon_stale` sweeps by age, which is a blunt instrument:
+        using it to drop one stale item also dropped four live ones."""
+        with self.tx() as db:
+            row = db.execute("SELECT role FROM work_items WHERE id=? AND status='PENDING'",
+                             (work_id,)).fetchone()
+            if not row:
+                return 0
+            db.execute("UPDATE work_items SET status='ABANDONED',outcome='abandoned' WHERE id=?", (work_id,))
+            self.event(db, 'work_abandoned', {'role': row['role'], 'work_id': work_id, 'reason': 'explicit'})
+            return 1
+
     def abandon_stale(self, seconds):
         """Mark orphaned dispatches abandoned. Never re-issues anything itself."""
         cutoff = time.time() - seconds
