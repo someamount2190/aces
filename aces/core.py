@@ -9,6 +9,8 @@ from .schema import apply, DOMAIN_EVENTS
 from .verify import transform, validate, is_reversible, has_secret_term, verify_plaintext
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
+WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
+ALL_ROLES = ROLES + (WARDEN,)
 CANDIDATE_FIELDS = {'name', 'program', 'limitations', 'math', 'assumptions'}
 
 
@@ -25,7 +27,7 @@ class Engine:
         self.path = str(path)
         with self.connect() as db:
             apply(db)
-            for role in ROLES:
+            for role in ALL_ROLES:
                 db.execute('INSERT OR IGNORE INTO sessions(role,messages) VALUES(?,?)', (role, '[]'))
 
     # ---- plumbing -------------------------------------------------------------------------
@@ -62,7 +64,7 @@ class Engine:
             return db.execute('SELECT state FROM control').fetchone()[0]
 
     def session(self, role):
-        if role not in ROLES:
+        if role not in ALL_ROLES:
             raise Denied('unknown role')
         with self.connect() as db:
             return dict(db.execute('SELECT * FROM sessions WHERE role=?', (role,)).fetchone())
@@ -70,7 +72,7 @@ class Engine:
     # ---- work items -----------------------------------------------------------------------
     def begin_work(self, role, event_cursor):
         """Get-or-create a pending item. Legacy idempotent form, kept for the in-process coordinator."""
-        if role not in ROLES:
+        if role not in ALL_ROLES:
             raise Denied('unknown role')
         with self.tx() as db:
             active = db.execute("SELECT id FROM work_items WHERE role=? AND status='PENDING'", (role,)).fetchone()
@@ -88,7 +90,7 @@ class Engine:
         Two provider calls for one role used to share a single item, so the second result was
         silently dropped. A refusal is the honest outcome.
         """
-        if role not in ROLES:
+        if role not in ALL_ROLES:
             raise Denied('unknown role')
         with self.tx() as db:
             active = db.execute("SELECT id FROM work_items WHERE role=? AND status='PENDING'", (role,)).fetchone()
@@ -230,9 +232,20 @@ class Engine:
     # ---- projections ----------------------------------------------------------------------
     def view(self, role):
         """What one role is allowed to know. Built by selection, never by row pass-through."""
-        if role not in ROLES:
+        if role not in ALL_ROLES:
             raise Denied('unknown role')
         with self.connect() as db:
+            if role == WARDEN:
+                # Supervisory: the ledger of what each role was shown, plus the event trail.
+                # This is the only view that can compare a projection against the secret it should
+                # not contain, which is precisely why it cannot act on the experiment.
+                ledger = db.execute('SELECT id,role,work_id,projection,created FROM dispatches '
+                                    'ORDER BY id DESC LIMIT 20').fetchall()
+                return {'dispatches': [{'id': r['id'], 'role': r['role'], 'work_id': r['work_id'],
+                                        'projection': r['projection'][:6000], 'created': r['created']}
+                                       for r in ledger],
+                        'events': [dict(r) for r in db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 60')],
+                        'leaks': [dict(r) for r in db.execute('SELECT * FROM leaks ORDER BY id')]}
             latest = db.execute('SELECT id,state,public,parent FROM challenges ORDER BY id DESC LIMIT 1').fetchone()
             challenge = None if not latest else dict(latest)
             if challenge:
@@ -255,7 +268,8 @@ class Engine:
 
     # ---- tools ----------------------------------------------------------------------------
     ALLOWED = {'generator': {'register'}, 'integrator': {'publish'},
-               'adversary': {'submit', 'compute'}, 'observer': {'record_finding'}}
+               'adversary': {'submit', 'compute'}, 'observer': {'record_finding'},
+               WARDEN: {'report_leak'}}
 
     def tool(self, role, name, args):
         if name not in self.ALLOWED.get(role, set()):
@@ -291,3 +305,23 @@ class Engine:
                                     'evidence_challenge': args['challenge']}),))
                 self.event(db, 'feedback_recorded', {'challenge': args['challenge']})
             return {'recorded': True}
+        if name == 'report_leak':
+            if set(args) != {'channel', 'severity', 'evidence'}:
+                raise ValueError('invalid leak report')
+            if args['severity'] not in ('low', 'medium', 'high'):
+                raise ValueError('invalid severity')
+            if not isinstance(args['channel'], str) or not isinstance(args['evidence'], str) \
+                    or len(args['channel']) > 200 or len(args['evidence']) > 4000:
+                raise ValueError('invalid leak report')
+            with self.tx() as db:
+                db.execute('INSERT INTO leaks(channel,severity,evidence,created) VALUES(?,?,?,?)',
+                           (args['channel'], args['severity'], args['evidence'], time.time()))
+                self.event(db, 'leak_reported', {'channel': args['channel'], 'severity': args['severity']})
+            return {'reported': True}
+
+    # ---- ledger ---------------------------------------------------------------------------
+    def record_dispatch(self, work_id, role, projection):
+        """Persist the exact projection a role was shown. Cheap, and it makes blindness auditable."""
+        with self.tx() as db:
+            db.execute('INSERT OR IGNORE INTO dispatches(work_id,role,projection,created) VALUES(?,?,?,?)',
+                       (work_id, role, packed(projection), time.time()))

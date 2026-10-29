@@ -215,6 +215,11 @@ Known leak channels to close (see §11): the Integrator currently receives `brea
 verbatim, which include the recovered plaintext; and "sanitized" failure notifications are not yet
 sanitized.
 
+**The Warden** is a fifth, supervisory projection: the dispatch ledger — what each role was actually shown —
+plus the event trail, and exactly one tool (`report_leak`). It holds no authority over truth, which is what
+makes it safe to let it see everything. The matrix above is enforced in code; the ledger (§10) is what makes
+that enforcement auditable rather than merely asserted.
+
 ## 7. Tool surface
 
 One dispatcher per role; a tool is available only if it is in `permissions` for that role. Every tool has a
@@ -325,6 +330,11 @@ item for a role), **7** (`abandon_stale` marks orphans and never re-issues them)
 failure projection strips the recovered plaintext). Partial: **4** — keyless constructions are now rejected
 at publication, but re-publishing a breached candidate is still allowed until candidate versioning exists.
 Open: **3**, **5**, **6**, **9**.
+
+A fifth supervisory session (the Warden) now audits the dispatch ledger for data-boundary leaks, so
+defect-8-class regressions are detected rather than assumed absent. It cannot observe **3** (a redirect on
+the network path), **5** (HTTP request validation) or **9** (a missing attack path): those are network,
+protocol and design issues, not data-boundary leaks, and remain open.
 
 ## 12. Security boundaries: now, next, later
 

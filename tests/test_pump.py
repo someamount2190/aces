@@ -1,8 +1,8 @@
 import contextlib, io, json, tempfile, unittest
 from pathlib import Path
 
-from aces.core import Denied, Engine
-from aces.pump import deliver, dispatch, main
+from aces.core import Denied, Engine, WARDEN
+from aces.pump import audit, deliver, dispatch, main, status
 from aces.verify import is_reversible, transform, validate, verify_plaintext
 
 SPEC = {'name': 'toy xor', 'program': [['xor_key', 0]], 'limitations': '8-bit key brute force',
@@ -174,6 +174,50 @@ class PumpTests(unittest.TestCase):
         lines = buf.getvalue().strip().split('\n')
         self.assertGreaterEqual(len(lines), 1)
         self.assertIn('generator', buf.getvalue())
+
+    # the warden ---------------------------------------------------------------------------
+    def test_ledger_records_the_exact_projection(self):
+        work = self.by_role(dispatch(self.e))
+        with self.e.connect() as db:
+            rows = {r['role']: json.loads(r['projection']) for r in db.execute('SELECT * FROM dispatches')}
+        self.assertEqual(set(rows), {'generator', 'observer'})
+        self.assertEqual(rows['generator'], self.e.view('generator'))
+
+    def test_warden_needs_a_ledger_before_it_is_called(self):
+        self.assertEqual(audit(self.e), [])
+        dispatch(self.e)
+        self.assertEqual(audit(self.e)[0]['role'], WARDEN)
+
+    def test_warden_reports_a_leak_and_holds_no_authority(self):
+        self.cycle()                                  # produces a publication and a ledger
+        item = audit(self.e)[0]
+        self.assertIn('dispatches', json.loads(item['prompt'])['environment'])
+        out = deliver(self.e, item['work_id'], json.dumps(
+            {'tool': 'report_leak',
+             'args': {'channel': 'adversary_projection', 'severity': 'high',
+                      'evidence': 'environment.challenge.public.spec present in blackbox mode'}}))
+        self.assertEqual(out['status'], 'ok', out)
+        self.assertEqual(status(self.e)['leaks'], 1)
+        # a fresh pass: the warden still cannot touch the experiment itself
+        again = audit(self.e)
+        self.assertTrue(again)
+        blocked = deliver(self.e, again[0]['work_id'],
+                          json.dumps({'tool': 'publish', 'args': {'candidate': 1}}))
+        self.assertEqual(blocked['error'], 'ToolDenied')
+
+    def test_no_projection_carries_the_target_secret(self):
+        """The invariant the Warden audits, asserted deterministically so a leak cannot ship."""
+        cid = self.cycle()
+        plain = self.attack()
+        self.e.submit(cid, plain)
+        with self.e.connect() as db:
+            secret = json.loads(db.execute('SELECT secret FROM challenges WHERE id=?', (cid,)).fetchone()[0])
+            rows = db.execute('SELECT role,projection FROM dispatches').fetchall()
+        self.assertTrue(rows)
+        for r in rows:
+            if r['role'] == 'observer':
+                continue                      # supervisory: sees the breach evidence by design
+            self.assertNotIn(secret['plaintext'], r['projection'], f'secret leaked to {r["role"]}')
 
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))

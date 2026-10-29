@@ -529,3 +529,13 @@ mathematical mechanisms and discover weaknesses not explicitly anticipated by th
 
 This describes the intended system. It does not by itself establish that the proposed agents or
 cryptographic discoveries have been implemented or validated.
+
+## Amendments
+
+Recorded deviations from the text above. The four-agent definition, mutual blindness and breach-gated
+escalation in §2, §4 and §7 are unchanged by both.
+
+| Date | Amendment | Rationale |
+|---|---|---|
+| 2026-10-29 | **Role embodiment.** The four agents are staffed by four persistent harness subagent sessions rather than provider models ([AGENTS.md](AGENTS.md)). Autonomy is relayed: one orchestrator turn per tick, so §16 is not satisfied by this embodiment. | No provider and no adequate local model is available on the host. |
+| 2026-10-29 | **Supervisory Warden.** A fifth session audits a ledger of what each role was actually shown and reports boundary leaks ([AGENTS.md](AGENTS.md) §4.5). It has one tool, no authority over truth, and cannot award candy, escalate or publish. | Blindness was asserted by code; the ledger lets it be audited against a record. Detection is deliberately separated from control. |

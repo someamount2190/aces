@@ -9,7 +9,7 @@ One tick:
 """
 import argparse, json, sys
 
-from .core import ROLES, Denied, Engine, packed
+from .core import ROLES, WARDEN, Denied, Engine, packed
 from .prompts import TASK
 
 
@@ -60,9 +60,27 @@ def dispatch(engine, max_turns=50):
             work_id = engine.claim_work(role, last)
         except Denied:
             continue
+        engine.record_dispatch(work_id, role, view)
         out.append({'work_id': work_id, 'role': role, 'turn': session['turns'] + 1,
                     'prompt': build_prompt(role, view, session['turns'] + 1)})
     return out
+
+
+def audit(engine):
+    """Supervisory pass: show the Warden the ledger of what each role was actually given.
+
+    Not part of the tick loop and not gated by the run/pause control — it observes, it does not act.
+    """
+    view = engine.view(WARDEN)
+    if not view['dispatches']:
+        return []
+    try:
+        work_id = engine.claim_work(WARDEN, engine.last_domain_event())
+    except Denied:
+        return []
+    turn = engine.session(WARDEN)['turns'] + 1
+    return [{'work_id': work_id, 'role': WARDEN, 'turn': turn,
+             'prompt': build_prompt(WARDEN, view, turn)}]
 
 
 def deliver(engine, work_id, answer):
@@ -122,6 +140,7 @@ def status(engine):
             'challenge': dict(latest) if latest else None,
             'candy': db.execute('SELECT COALESCE(SUM(amount),0) FROM rewards').fetchone()[0],
             'findings': db.execute('SELECT COUNT(*) FROM findings').fetchone()[0],
+            'leaks': db.execute('SELECT COUNT(*) FROM leaks').fetchone()[0],
             'events': db.execute('SELECT COUNT(*) FROM events').fetchone()[0],
         }
 
@@ -140,6 +159,8 @@ def main(argv=None):
 
     sub.add_parser('status', help='compact state')
 
+    sub.add_parser('audit', help='claim a supervisory pass for the Warden')
+
     r = sub.add_parser('recover', help='abandon stale dispatches')
     r.add_argument('--minutes', type=int, default=15)
 
@@ -148,6 +169,8 @@ def main(argv=None):
 
     if args.command == 'dispatch':
         payload = dispatch(engine, args.max_turns)
+    elif args.command == 'audit':
+        payload = audit(engine)
     elif args.command == 'deliver':
         payload = deliver(engine, args.work_id, args.answer)
     elif args.command == 'status':

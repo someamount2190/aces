@@ -37,6 +37,9 @@ The whole first slice, in six files:
 Production code lands around **650 lines**. That is the entire system needed to run the loop — not a
 prototype of the system, the system, minus the science.
 
+A fifth supervisory session (the Warden) audits the ledger of what each role was shown. It adds no
+scheduling, one view and one tool, and it holds no authority over truth — see [AGENTS.md](AGENTS.md) §4.5.
+
 ## 3. What we are deliberately not building
 
 | Not now | Why | What would bring it back |

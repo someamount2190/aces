@@ -73,6 +73,22 @@ CREATE TABLE IF NOT EXISTS control(
     id INTEGER PRIMARY KEY CHECK(id=1),
     state TEXT NOT NULL);
 
+-- What each role was actually shown. Without this ledger, blindness is a claim about code;
+-- with it, a supervisory session can audit what really crossed each boundary.
+CREATE TABLE IF NOT EXISTS dispatches(
+    id INTEGER PRIMARY KEY,
+    work_id TEXT UNIQUE,
+    role TEXT NOT NULL,
+    projection TEXT NOT NULL,
+    created REAL NOT NULL);
+
+CREATE TABLE IF NOT EXISTS leaks(
+    id INTEGER PRIMARY KEY,
+    channel TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created REAL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 

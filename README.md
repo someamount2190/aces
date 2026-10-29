@@ -36,6 +36,7 @@ python -m aces.pump --db live.sqlite3 dispatch                     # work for ro
 python -m aces.pump --db live.sqlite3 deliver --work-id ID --answer '{"tool":"register","args":{...}}'
 python -m aces.pump --db live.sqlite3 status
 python -m aces.pump --db live.sqlite3 recover --minutes 15         # abandon stale dispatches
+python -m aces.pump --db live.sqlite3 audit                        # one supervisory pass for the Warden
 ```
 
 `python tools/smoke.py` drives one complete cycle through those commands with scripted answers, so the
