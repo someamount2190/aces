@@ -1,0 +1,20 @@
+[
+  {
+    "work_id": "80fac1fd615d46ebce6f59f359d1d3d5",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[{\"id\":1,\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Four fixed rotations around forward-causal prefix runs. Chosen-plaintext differential probing of single-byte flips should localise key bytes incrementally. No nonce, no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L; the modular additions carry the only GF(2) non-linearity.\",\"name\":\"four_seam_wrap_mixer_v1\",\"program\":[[\"rot_bytes\",211],[\"add_key\",0],[\"chain_add\",0],[\"rol\",3],[\"xor_key\",0],[\"rot_bytes\",89],[\"add\",128],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",5],[\"rot_bytes\",131],[\"add\",46],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",7],[\"rot_bytes\",59],[\"add\",201],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1]]}}],\"failures\":[],\"feedback\":[],\"rejections\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "637068f6b8ca9ce8fd7ce6365a74b6c0",
+    "role": "adversary",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"candy\":0,\"challenge\":{\"id\":1,\"parent\":null,\"public\":{\"category\":\"plaintext_recovery\",\"ciphertext\":\"017f82e813df21da49f2ae90a84b6fb1b66df3f35ce77f52\",\"key_bits\":128,\"known_ciphertext\":\"0b32b18d\",\"known_plaintext\":\"00010203\",\"mode\":\"open\",\"oracle_budget\":64,\"rules\":\"Recover exact target plaintext. Toy 8-bit key. No external targets.\",\"spec\":{\"assumptions\":\"Fixed 16-byte key reused round-robin, public program, arbitrary length L.\",\"limitations\":\"Four fixed rotations around forward-causal prefix runs. Chosen-plaintext differential probing of single-byte flips should localise key bytes incrementally. No nonce, no length-domain separation.\",\"math\":\"Each step is a bijection on (Z/256)^L; the modular additions carry the only GF(2) non-linearity.\",\"name\":\"four_seam_wrap_mixer_v1\",\"program\":[[\"rot_bytes\",211],[\"add_key\",0],[\"chain_add\",0],[\"rol\",3],[\"xor_key\",0],[\"rot_bytes\",89],[\"add\",128],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",5],[\"rot_bytes\",131],[\"add\",46],[\"chain_add\",0],[\"xor_key\",0],[\"rol\",7],[\"rot_bytes\",59],[\"add\",201],[\"chain_xor\",0],[\"add_key\",0],[\"rol\",1]]}},\"state\":\"ACTIVE\"},\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"adversary\",\"task\":\"Recover the target plaintext, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "e3cfb3e78d3229e46c19e36a2f6f947d",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793286370.7596877,\"data\":\"{\\\"candidate\\\":1}\",\"id\":1,\"kind\":\"candidate_registered\"},{\"created\":1793286370.7775638,\"data\":\"{\\\"challenge\\\":1,\\\"mode\\\":\\\"open\\\",\\\"parent\\\":null}\",\"id\":2,\"kind\":\"published\"},{\"created\":1793286370.9278314,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"80fac1fd615d46ebce6f59f359d1d3d5\\\"}\",\"id\":3,\"kind\":\"work_started\"},{\"created\":1793286370.9776576,\"data\":\"{\\\"cursor\\\":2,\\\"role\\\":\\\"adversary\\\",\\\"work_id\\\":\\\"637068f6b8ca9ce8fd7ce6365a74b6c0\\\"}\",\"id\":4,\"kind\":\"work_started\"}],\"findings\":[],\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]

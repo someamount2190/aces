@@ -1,0 +1,1 @@
+{"tool":"critique","args":{"hypothesis":1,"verdict":"sound","flaw":"","advice":"Keep this shape next time - a falsifiable prediction tested on the cheapest oracle probe before any compute - and after a null match run one structural probe on the returned ciphertexts so the refutation rests on more than a single eliminated guess."}}
