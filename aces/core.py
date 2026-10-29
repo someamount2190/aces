@@ -7,7 +7,7 @@ import contextlib, hashlib, json, secrets, sqlite3, time
 
 from .schema import apply, DOMAIN_EVENTS
 from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
-                     valid_method)
+                     valid_method, KEY_BITS, KEY_BYTES, KEY_SPACE, CHAIN_OPS)
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
@@ -40,9 +40,10 @@ def assess(spec):
     so instead of guessing, and so "harder" can eventually mean something measured.
     """
     program = spec.get('program', [])
-    return {'key_bits': 8,
-            'known_plaintext_work': 256,
-            'byte_local': True,
+    mixes = any(str(op) in CHAIN_OPS for op, _ in program)
+    return {'key_bits': KEY_BITS,
+            'known_plaintext_work': KEY_SPACE,
+            'byte_local': not mixes,
             'key_ops': sum(1 for op, _ in program if str(op).endswith('_key')),
             'program_length': len(program)}
 
@@ -251,7 +252,7 @@ class Engine:
             spec = json.loads(row[0])
             if not has_secret_term(spec['program']):
                 raise Denied('candidate has no secret-dependent term')
-            key = secrets.randbelow(256)
+            key = secrets.token_bytes(KEY_BYTES)
             plain = secrets.token_bytes(24)
             public = {'mode': mode, 'category': 'plaintext_recovery',
                       'ciphertext': transform(plain, key, spec['program']).hex(),
@@ -263,7 +264,7 @@ class Engine:
                 public['spec'] = contract(spec)
             cur = db.execute('INSERT INTO challenges(candidate,state,public,secret,parent,published) VALUES(?,?,?,?,?,?)',
                              (candidate, 'ACTIVE', packed(public),
-                              packed({'plaintext': plain.hex(), 'key': key}), parent, time.time()))
+                              packed({'plaintext': plain.hex(), 'key': key.hex()}), parent, time.time()))
             cid = cur.lastrowid
             self.event(db, 'published', {'challenge': cid, 'parent': parent, 'mode': mode})
         return {'challenge': cid}
@@ -405,7 +406,7 @@ class Engine:
             if max(len(known), len(cipher), len(target)) > 4096:
                 raise ValueError('input too large')
             solutions = [{'plaintext': transform(target, k, program, True).hex(), 'key': k}
-                         for k in range(256) if transform(known, k, program) == cipher]
+                         for k in range(KEY_SPACE) if transform(known, k, program) == cipher]
             with self.tx() as db:
                 active = db.execute("SELECT id FROM challenges WHERE state='ACTIVE' "
                                     "ORDER BY id DESC LIMIT 1").fetchone()

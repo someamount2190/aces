@@ -1,0 +1,14 @@
+[
+  {
+    "work_id": "0b5d9c1cd5fe60c3ce538275c4135562",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[],\"failures\":[],\"feedback\":[],\"rejections\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "6a3cef66a43b329fc847f518ac80f52a",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793274144.9838428,\"data\":\"{\\\"cursor\\\":0,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"0b5d9c1cd5fe60c3ce538275c4135562\\\"}\",\"id\":1,\"kind\":\"work_started\"}],\"findings\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]

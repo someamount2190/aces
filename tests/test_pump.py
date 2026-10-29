@@ -321,9 +321,40 @@ class PumpTests(unittest.TestCase):
     def test_integrator_sees_a_measured_assessment(self):
         self.register()
         entry = self.e.view('integrator')['catalog'][0]
-        self.assertEqual(entry['assessment']['known_plaintext_work'], 256)
-        self.assertTrue(entry['assessment']['byte_local'])
+        self.assertEqual(entry['assessment']['known_plaintext_work'], 65536)
+        self.assertEqual(entry['assessment']['key_bits'], 16)
+        self.assertTrue(entry['assessment']['byte_local'])     # this spec has no chain op
         self.assertGreaterEqual(entry['assessment']['key_ops'], 1)
+
+    def test_chain_ops_mix_across_positions_and_invert(self):
+        from aces.verify import is_reversible, transform
+        program = [['xor_key', 0], ['chain_add', 0], ['rol', 3], ['chain_xor', 0], ['add_key', 0]]
+        self.assertTrue(is_reversible(program))
+        data = bytes(range(24))
+        for key in (0, 1, 0x1234, 0xFFFF):
+            self.assertEqual(transform(transform(data, key, program), key, program, True), data)
+        # a change in byte 0 must reach later positions, or the map is still byte-local
+        plain = bytes(8)
+        changed = bytes([1]) + bytes(7)
+        self.assertNotEqual(transform(plain, 7, [['chain_add', 0]]),
+                            transform(changed, 7, [['chain_add', 0]]))
+
+    def test_a_mixing_candidate_is_not_byte_local(self):
+        cid = self.e.register(dict(SPEC, name='mixing', program=[['xor_key', 0], ['chain_add', 0],
+                                                                 ['rol', 3], ['add_key', 0]]))['candidate']
+        entry = [e for e in self.e.view('integrator')['catalog'] if e['id'] == cid][0]
+        self.assertFalse(entry['assessment']['byte_local'])
+
+    def test_compute_searches_the_whole_16_bit_space(self):
+        cid = self.cycle()
+        public = self.e.view('adversary')['challenge']['public']
+        solutions = self.e.tool('adversary', 'compute', {
+            'program': public['spec']['program'],
+            'known_plaintext': public['known_plaintext'],
+            'known_ciphertext': public['known_ciphertext'],
+            'ciphertext': public['ciphertext']})['solutions']
+        self.assertEqual(len(solutions), 1)
+        self.assertTrue(0 <= solutions[0]['key'] < 65536)
 
     def test_only_the_integrator_may_reject(self):
         cid = self.register()

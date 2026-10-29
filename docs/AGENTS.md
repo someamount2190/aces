@@ -102,6 +102,10 @@ message carries only the projection.
 - **Objective:** propose reversible byte-level constructions with an honest account of their limits.
 - **Tools:** `register{spec:{name, program, limitations, math, assumptions}}`.
 - **Output:** exactly one JSON object, or `{"idle": true}`.
+- **Program:** 1–32 steps from `xor_key`, `add_key`, `xor`, `add`, `rol`, `chain_add`, `chain_xor`.
+  The key is 16 bits, used round-robin by position. `chain_add` and `chain_xor` mix across byte
+  positions; without one of them the construction is a per-byte map and a known-plaintext search
+  costs the full key space whatever else the program does.
 - **Rules:** 1–32 straight-line op steps from the fixed op set; no security claims; state the failure mode
   you expect; use Observer feedback when it exists; do not restate a candidate already in the catalog.
 

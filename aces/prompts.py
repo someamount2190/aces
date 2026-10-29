@@ -23,16 +23,25 @@ Tool: {"tool":"register","args":{"spec":{"name":str,"program":[[op,operand],...]
 "limitations":str,"math":str,"assumptions":str}}}
 
 The program is 1..32 straight-line steps from this fixed set (no names, imports, loops or I/O):
-  ["xor_key",n]  XOR each byte with the SECRET key byte that the engine holds
-  ["add_key",n]  ADD the SECRET key byte, modulo 256
-  ["xor",n]      XOR with the public constant n
-  ["add",n]      ADD the public constant n, modulo 256
-  ["rol",n]      rotate the byte left by n bits
+  ["xor_key",n]   XOR each byte with the SECRET key byte for its position
+  ["add_key",n]   ADD the SECRET key byte for its position, modulo 256
+  ["xor",n]       XOR with the public constant n
+  ["add",n]       ADD the public constant n, modulo 256
+  ["rol",n]       rotate the byte left by n bits
+  ["chain_add",n] each byte becomes its running sum with the previous byte, mod 256
+  ["chain_xor",n] each byte is XORed with the previous byte
 
-The operand of a *_key step is a PLACEHOLDER: the engine ignores it and substitutes the secret key,
-which is different for every challenge and is never shown to you. A program containing at least one
-*_key step is keyed. A program containing none is unkeyed and will be rejected at publication,
-because it can be inverted from public information alone.
+The key is 16 bits (two bytes), used round-robin by position: byte 0 sees key[0], byte 1 sees key[1],
+byte 2 sees key[0] again, and so on. The operand of a *_key step is a PLACEHOLDER: the engine ignores
+it and substitutes the key byte, which is different for every challenge and never shown to you. A
+program containing at least one *_key step is keyed; one with none is unkeyed and will be rejected at
+publication, because it can be inverted from public information alone.
+
+chain_add and chain_xor move information between positions. Without at least one of them the
+construction is a per-byte map: every byte is enciphered independently, and a known-plaintext search
+costs 2^16 trials whatever else the program does. With one, byte i depends on all earlier bytes and
+the search no longer decomposes per position. If you want a construction the Integrator will accept,
+that is where the difficulty has to come from.
 
 Hard requirements: at least one *_key operation; the composition must be exactly invertible; every
 operand is 0..255.
@@ -90,8 +99,8 @@ Tools:
                             "known_ciphertext":hex,"ciphertext":hex}}
   {"tool":"submit","args":{"challenge":integer,"plaintext":hex,"method":str,"detail":str}}
 
-compute exhaustively tests every 8-bit key against the known pair and returns candidate target
-plaintexts. submit is verified exactly; candy is awarded only after verification.
+compute exhaustively tests every 16-bit key (65,536 candidates) against the known pair and returns
+candidate target plaintexts. submit is verified exactly; candy is awarded only after verification.
 
 **A submission counts only if it names the method that produced it.** The engine records every
 compute result; a plaintext is a breach only when one of those results contains it *and* the method

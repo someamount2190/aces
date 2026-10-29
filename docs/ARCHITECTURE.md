@@ -299,6 +299,17 @@ and the loop stalls at the gate. That is not a fault in the gate — it is the V
 express. Lifting it requires the construction language to gain parameters that actually raise the cost of a
 known-plaintext search: a wider key, cross-byte mixing, or a state that carries between blocks.
 
+**Construction language (v2).** Seven operations: five byte-local (`xor_key`, `add_key`, `xor`, `add`,
+`rol`) and two that mix across positions (`chain_add`, `chain_xor`, both invertible by reversing the
+sweep direction). The key is 16 bits, consumed round-robin by byte position. Reversibility is checked
+exhaustively over the 256-value byte domain and sampled over the 65,536-key space — exhaustive over both
+would cost 16 M transformations per registration, which buys nothing the sample does not.
+
+This is a deliberate step, not a rest: `chain_add`/`chain_xor` stop the construction being a per-byte map,
+so a known-plaintext search no longer decomposes per position. But at 16 bits the search still costs at
+most 65,536 trials, so the key width, not the mixing, is what currently bounds the work. Mixing becomes
+the binding constraint only once the key is wide enough that exhaustive search is off the table.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.
