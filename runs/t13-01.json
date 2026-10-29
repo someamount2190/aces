@@ -1,0 +1,14 @@
+[
+  {
+    "work_id": "dd41dbe6577dbe0574fc0388126bfee1",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[],\"failures\":[],\"feedback\":[],\"rejections\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "5b61b9474ec293d3bb97377e9f67c147",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793280975.7553325,\"data\":\"{\\\"cursor\\\":0,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"dd41dbe6577dbe0574fc0388126bfee1\\\"}\",\"id\":1,\"kind\":\"work_started\"}],\"findings\":[],\"hypotheses\":[],\"reviews\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]
