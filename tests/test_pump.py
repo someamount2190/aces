@@ -219,6 +219,23 @@ class PumpTests(unittest.TestCase):
                 continue                      # supervisory: sees the breach evidence by design
             self.assertNotIn(secret['plaintext'], r['projection'], f'secret leaked to {r["role"]}')
 
+    def test_catalog_exposes_only_the_contract_fields(self):
+        """The run-001 defect: bookkeeping fields invited a spec the tool must reject."""
+        fields = {'name', 'program', 'limitations', 'math', 'assumptions'}
+        cid = self.register()
+        self.assertEqual(set(self.e.view('generator')['catalog'][0]['spec']), fields)
+        work = self.by_role(dispatch(self.e))['integrator']
+        deliver(self.e, work['work_id'],
+                json.dumps({'tool': 'publish', 'args': {'candidate': cid, 'mode': 'open'}}))
+        self.assertEqual(set(self.e.view('adversary')['challenge']['public']['spec']), fields)
+
+    def test_observer_receives_only_events_since_its_cursor(self):
+        work = self.by_role(dispatch(self.e))['observer']
+        deliver(self.e, work['work_id'], '{"idle": true}')
+        cursor = self.e.session('observer')['cursor']
+        ids = [e['id'] for e in self.e.view('observer')['events']]
+        self.assertTrue(all(i > cursor for i in ids), ids)
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

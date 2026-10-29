@@ -12,10 +12,22 @@ ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
 ALL_ROLES = ROLES + (WARDEN,)
 CANDIDATE_FIELDS = {'name', 'program', 'limitations', 'math', 'assumptions'}
+SPEC_FIELDS = ('name', 'program', 'limitations', 'math', 'assumptions')
+EVENT_WINDOW = 60
 
 
 def packed(x):
     return json.dumps(x, sort_keys=True, separators=(',', ':'))
+
+
+def contract(spec):
+    """The fields a role may rely on — never the bookkeeping around them.
+
+    The catalog used to expose status, security_claim, dependencies, keygen, input_size and
+    test_vector. A generator copied them into its spec and the register tool rejected the result:
+    an environment that shows more than the contract invites answers that break it.
+    """
+    return {k: spec[k] for k in SPEC_FIELDS if k in spec}
 
 
 class Denied(ValueError):
@@ -191,7 +203,7 @@ class Engine:
                       'rules': 'Recover exact target plaintext. Toy 8-bit key. No external targets.',
                       'oracle_budget': 0}
             if mode == 'open':
-                public['spec'] = spec
+                public['spec'] = contract(spec)
             cur = db.execute('INSERT INTO challenges(candidate,state,public,secret,parent,published) VALUES(?,?,?,?,?,?)',
                              (candidate, 'ACTIVE', packed(public),
                               packed({'plaintext': plain.hex(), 'key': key}), parent, time.time()))
@@ -240,9 +252,9 @@ class Engine:
                 # This is the only view that can compare a projection against the secret it should
                 # not contain, which is precisely why it cannot act on the experiment.
                 ledger = db.execute('SELECT id,role,work_id,projection,created FROM dispatches '
-                                    'ORDER BY id DESC LIMIT 4').fetchall()
+                                    'ORDER BY id DESC LIMIT 3').fetchall()
                 return {'dispatches': [{'id': r['id'], 'role': r['role'], 'work_id': r['work_id'],
-                                        'projection': r['projection'][:4000], 'created': r['created']}
+                                        'projection': r['projection'][:2500], 'created': r['created']}
                                        for r in ledger],
                         'events': [dict(r) for r in db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 12')],
                         'leaks': [dict(r) for r in db.execute('SELECT * FROM leaks ORDER BY id')]}
@@ -253,7 +265,8 @@ class Engine:
             candy = db.execute('SELECT COALESCE(SUM(amount),0) FROM rewards').fetchone()[0]
             if role == 'adversary':
                 return {'challenge': challenge, 'candy': candy}
-            catalog = [dict(id=r[0], spec=json.loads(r[1])) for r in db.execute('SELECT id,spec FROM candidates')]
+            catalog = [dict(id=r[0], spec=contract(json.loads(r[1])))
+                       for r in db.execute('SELECT id,spec FROM candidates')]
             if role == 'integrator':
                 # Sanitized: the recovered plaintext is the secret just broken. The Integrator learns
                 # that a property failed, not what the answer was.
@@ -263,7 +276,10 @@ class Engine:
             if role == 'generator':
                 return {'catalog': catalog,
                         'feedback': [json.loads(r[0]) for r in db.execute('SELECT data FROM feedback')]}
-            return {'events': [dict(r) for r in db.execute('SELECT * FROM events')],
+            return {'events': [dict(r) for r in db.execute(
+                        'SELECT * FROM events WHERE id > ? ORDER BY id LIMIT ?',
+                        (db.execute("SELECT cursor FROM sessions WHERE role=?", (role,)).fetchone()[0],
+                         EVENT_WINDOW))],
                     'findings': [dict(r) for r in db.execute('SELECT * FROM findings')]}
 
     # ---- tools ----------------------------------------------------------------------------
