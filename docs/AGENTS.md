@@ -131,6 +131,9 @@ message carries only the projection.
 - **Rules:** operate only on the published challenge; no external targets; candy exists only after
   verification; a failed attack is a normal outcome, not a reason to fabricate one; a large number of
   attempts is not a win condition.
+- **Search budget:** `compute` enumerates at most 2^20 keys and reports `exhausted` when the key space is
+  wider. With a 32-bit key it is always exhausted, so exhaustive search is not a method that works here;
+  the Adversary must find a structural attack or record that it cannot.
 - **Trace and method rule:** a submission counts only if a `compute` result for that challenge contains it
   *and* it names the method that produced it, from the verifier's vocabulary. An answer reached any other
   way earns nothing and does not consume the challenge, even when it is correct. A session has its own
