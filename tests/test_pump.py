@@ -611,6 +611,18 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(out['status'], 'refuted')
         self.assertEqual(out['work_item'], work)
 
+    def test_reviewer_sees_the_ordered_action_log(self):
+        """RUN-014: the Reviewer paraphrased a prose summary and missed compute before the probe."""
+        self.cycle()
+        first = self.e.begin_work('adversary', 0)
+        self.e.finish_work(first, json.dumps({'tool': 'compute', 'args': {}}), 'tool_executed')
+        second = self.e.begin_work('adversary', 0)
+        self.e.finish_work(second, json.dumps({'tool': 'analyse',
+                                               'args': {'kind': 'key_schedule'}}), 'tool_executed')
+        actions = self.e.view('reviewer')['actions']
+        self.assertEqual([a['tool'] for a in actions], ['compute', 'analyse'])
+        self.assertEqual(actions[1]['args']['kind'], 'key_schedule')
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

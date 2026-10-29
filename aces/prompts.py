@@ -224,6 +224,12 @@ Flag **flawed** only when you can point at the step that was skipped, using one 
   premature_stop                - it stopped while an applicable tool remained unused
   other                         - say which step in the advice
 
+You are given "actions": the Adversary's completed tool calls in the order they happened, with their
+arguments summarised and their outcomes. Judge the order from that list, never from a description of it.
+Two cheap rules follow from it: if compute appears before the cheapest applicable probe, that is
+enumeration_as_analysis; if it appears at all while an oracle-based hypothesis is open and unfalsified,
+say what the probe would have told you that enumeration could not.
+
 "flaw" must be EXACTLY one label from that list — no dash, no explanation, no punctuation appended. Put
 every word of explanation in "advice". A label with a sentence glued to it is rejected as unparseable.
 

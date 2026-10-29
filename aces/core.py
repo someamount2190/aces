@@ -34,6 +34,27 @@ def contract(spec):
     return {k: spec[k] for k in SPEC_FIELDS if k in spec}
 
 
+def action_summary(tool, args):
+    """A reviewer-sized paraphrase of one action's arguments. No free text from the session."""
+    if not isinstance(args, dict):
+        return {}
+    if tool == 'analyse':
+        out = {'kind': args.get('kind')}
+        if args.get('kind') == 'differential':
+            out['difference'] = str(args.get('difference'))[:12]
+            out['pairs'] = args.get('pairs')
+        if args.get('kind') == 'pairs':
+            out['key'] = args.get('key')
+        return out
+    if tool == 'oracle':
+        return {'plaintexts': len(args.get('plaintexts') or [])}
+    if tool == 'compute':
+        return {'searched': 'requested'}
+    if tool in ('hypothesize', 'resolve', 'submit'):
+        return {k: v for k, v in args.items() if k in ('hypothesis', 'status', 'challenge', 'method')}
+    return {k: str(v)[:40] for k, v in list(args.items())[:3]}
+
+
 def assess(spec, key_bits=DEFAULT_KEY_BITS):
     """Structural facts about a construction, so a difficulty judgement has a number under it.
 
@@ -385,7 +406,9 @@ class Engine:
         with self.connect() as db:
             if role == REVIEWER:
                 # Everything needed to judge process: what was claimed, what was predicted, what
-                # happened, and what previous reviews already said.
+                # happened, and what previous reviews already said. The action log is ordered and
+                # derived from the record, so "was the cheap probe before the expensive one" is a
+                # fact to check rather than a narrative to reconstruct.
                 hypotheses = [{'id': r['id'], 'weakness': r['weakness'], 'attack': r['attack'],
                                'predicted': r['predicted'], 'status': r['status'],
                                'evidence': r['evidence'],
@@ -398,7 +421,24 @@ class Engine:
                             'flaw': r['flaw'], 'advice': r['advice']}
                            for r in db.execute('SELECT hypothesis,verdict,flaw,advice FROM reviews '
                                                'ORDER BY id DESC LIMIT 10')]
-                return {'hypotheses': hypotheses, 'reviews': reviews}
+                actions = []
+                for r in db.execute("SELECT id,created,answer,outcome,error_type FROM work_items "
+                                    "WHERE role='adversary' AND status='DONE' "
+                                    "ORDER BY created DESC, id DESC LIMIT 12"):
+                    tool, args, idle = 'unparsed', {}, False
+                    try:
+                        parsed = json.loads(r['answer'] or '{}')
+                        if isinstance(parsed, dict):
+                            idle = bool(parsed.get('idle'))
+                            tool = 'idle' if idle else (parsed.get('tool') or 'unknown')
+                            args = parsed.get('args') or {}
+                    except Exception:
+                        pass
+                    actions.append({'at': round(r['created'], 1), 'tool': tool,
+                                    'args': action_summary(tool, args),
+                                    'outcome': r['outcome'], 'error': r['error_type']})
+                return {'hypotheses': hypotheses, 'reviews': reviews,
+                        'actions': list(reversed(actions))}
             if role == WARDEN:
                 # Supervisory: the ledger of what each role was shown, plus the event trail.
                 # This is the only view that can compare a projection against the secret it should
