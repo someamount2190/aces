@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.sqlite3*
 config.json
+models/
+# datasets are derived; tools/build_dataset.py regenerates them
+runs/dataset/
