@@ -1,0 +1,1 @@
+{"tool":"critique","args":{"hypothesis":1,"verdict":"sound","flaw":"","advice":"Repeat this shape next time - analysis first, then a falsifiable prediction, the cheapest probe before compute, and refutation on evidence - and use the remaining oracle queries to vary flip position so one flat difference is not over-generalised."}}
