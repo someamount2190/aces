@@ -131,6 +131,19 @@ def deliver(engine, work_id, answer):
             engine.event(db, 'research_out_of_bounds', {'role': role, 'work_id': work_id,
                                                         'tokens': flagged})
 
+    # Repeating the previous answer verbatim cannot change the state, and unattended runs will do it
+    # forever: a null solve, resubmitted, is indistinguishable from being stuck. Idling again is
+    # legitimate, so this applies to tool calls only.
+    with engine.connect() as db:
+        previous = db.execute(
+            "SELECT answer FROM work_items WHERE role=? AND status='DONE' AND id != ? "
+            "ORDER BY created DESC, id DESC LIMIT 1", (role, work_id)).fetchone()
+    repeat_guard = (bool(previous) and previous['answer']
+                    and previous['answer'].strip() == answer.strip()
+                    and not action.get('idle'))
+    if repeat_guard:
+        return fail('NoProgress', 'identical to your previous answer; nothing has changed since it')
+
     if action.get('idle'):
         # An idle turn with an active challenge and nothing on record is not an investigation, and it
         # leaves the Reviewer nothing to audit. Make the reasoning explicit first.
