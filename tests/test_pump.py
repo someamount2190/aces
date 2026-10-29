@@ -433,6 +433,18 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(transform(cipher, b'\x00\x01', [['rot_bytes', 5], ['xor_key', 0]], True), data)
         self.assertNotEqual(data[:4], transform(data, b'\x00\x01', [['rot_bytes', 5]])[:4])
 
+    def test_reaching_for_the_system_instead_of_the_literature_is_recorded(self):
+        """run-008: the Adversary tried to research the project itself. The record should show it."""
+        work = self.by_role(dispatch(self.e))['generator']
+        deliver(self.e, work['work_id'], json.dumps(
+            {'tool': 'register', 'args': {'spec': dict(SPEC, name='ACES_Prototype probe')}}))
+        with self.e.connect() as db:
+            rows = [json.loads(r[0]) for r in db.execute(
+                "SELECT data FROM events WHERE kind='research_out_of_bounds'")]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['role'], 'generator')
+        self.assertIn('aces_', rows[0]['tokens'])
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

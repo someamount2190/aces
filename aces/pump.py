@@ -12,6 +12,18 @@ import argparse, json, sys
 from .core import ROLES, WARDEN, Denied, Engine, packed
 from .prompts import TASK
 
+# Tokens that mark a role trying to reach the system instead of the literature. A session that
+# searches for ACES, its files or its harness is not researching cryptography; it is trying to look
+# at the experiment from outside. The match is recorded as an event for the Warden, not enforced —
+# the session may have been quoting its own instructions.
+OUT_OF_BOUNDS = ('aces_', 'aces prototype', 'aces.sqlite', 'opencode', 'deepseek harness',
+                 'dsh session', 'challenge.db')
+
+
+def out_of_bounds(text):
+    lowered = (text or '').lower()
+    return sorted({t for t in OUT_OF_BOUNDS if t in lowered})
+
 
 # ---- scheduling --------------------------------------------------------------------------------
 
@@ -104,6 +116,14 @@ def deliver(engine, work_id, answer):
         return fail('SchemaViolation', exc)
     if not isinstance(action, dict):
         return fail('SchemaViolation', 'reply is not a JSON object')
+
+    # Record any attempt to reach the system itself rather than the literature. This is a signal for
+    # the Warden; the answer is still processed, because a session may be quoting its own charter.
+    flagged = out_of_bounds(json.dumps(action))
+    if flagged:
+        with engine.tx() as db:
+            engine.event(db, 'research_out_of_bounds', {'role': role, 'work_id': work_id,
+                                                        'tokens': flagged})
 
     if action.get('idle'):
         engine.finish_work(work_id, answer, outcome='idle',

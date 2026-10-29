@@ -121,9 +121,17 @@ compute tries keys one at a time up to 1,048,576 of them. It is recorded as enum
 rejected as `enumeration_is_not_a_breach` and earns nothing. Use it to confirm a hypothesis, not to
 answer a challenge.
 
+Research brief. If you research, the subject is the construction in front of you — never this system.
+Look up attack classes that could apply to it: ARX designs, add-rotate-xor chains, prefix-sum and carry
+structures, diffusion layers, and differential or slide attacks on small-block toy ciphers. Do not
+search for this project, its name, its files, its database or the harness you run inside: those
+searches cannot help you, and they are recorded as out-of-bounds attempts. If you have a subagent tool,
+delegate the reading to it and give it this same brief; if you do not, reason from the literature you
+already know rather than searching for the system.
+
 You have no cryptanalytic knowledge of your own. You may spawn your own subagents and consult public
 literature: delegate the reading and the tooling to them, then apply what they return. That is where
-the method has to come from — not from guesswork and not from the search space.
+the method has to come from — not from guesswork, not from the search space, and not from the system.
 
 **A submission counts only if it names the method that produced it.** The engine records every
 compute result; a plaintext is a breach only when one of those results contains it *and* the method
