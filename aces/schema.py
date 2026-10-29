@@ -164,6 +164,19 @@ CREATE TABLE IF NOT EXISTS hypotheses(
     created REAL NOT NULL,
     resolved REAL);
 
+-- A process review of one hypothesis, written by the Observer. The verdict is about how the Adversary
+-- worked, not about whether the cryptography held: a refuted hypothesis reached by sound reasoning is
+-- a good result, and a lucky guess is not. Flaws are drawn from a fixed vocabulary so they can be
+-- counted, and they are shown to the Adversary so the same one is not repeated.
+CREATE TABLE IF NOT EXISTS reviews(
+    id INTEGER PRIMARY KEY,
+    hypothesis INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    flaw TEXT,
+    advice TEXT NOT NULL,
+    created REAL NOT NULL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 
@@ -172,6 +185,7 @@ INSERT OR IGNORE INTO control VALUES(1,'paused');
 DOMAIN_EVENTS = (
     'candidate_registered', 'candidate_rejected', 'published', 'submission_evaluated',
     'breach_confirmed', 'feedback_recorded', 'finding_recorded', 'administrative_control',
+    'hypothesis_opened', 'hypothesis_resolved', 'critique_recorded',
 )
 
 

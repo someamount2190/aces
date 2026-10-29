@@ -395,12 +395,18 @@ class Engine:
                 challenge['public'] = json.loads(challenge['public'])
             candy = db.execute('SELECT COALESCE(SUM(amount),0) FROM rewards').fetchone()[0]
             if role == 'adversary':
-                # Its own hypothesis log, so a refuted dead end is not walked twice.
+                # Its own hypothesis log and the Observer's reviews of how it worked, so a refuted
+                # dead end and a flagged habit are both visible next turn.
                 hypotheses = [{'id': r['id'], 'weakness': r['weakness'], 'attack': r['attack'],
                                'status': r['status']}
                               for r in db.execute('SELECT id,weakness,attack,status FROM hypotheses '
                                                   'ORDER BY id DESC LIMIT 10')]
-                return {'challenge': challenge, 'candy': candy, 'hypotheses': hypotheses}
+                reviews = [{'hypothesis': r['hypothesis'], 'verdict': r['verdict'],
+                            'flaw': r['flaw'], 'advice': r['advice']}
+                           for r in db.execute('SELECT hypothesis,verdict,flaw,advice FROM reviews '
+                                               'ORDER BY id DESC LIMIT 5')]
+                return {'challenge': challenge, 'candy': candy,
+                        'hypotheses': hypotheses, 'reviews': reviews}
             catalog = [dict(id=r[0], spec=contract(json.loads(r[1])))
                        for r in db.execute('SELECT id,spec FROM candidates')]
             if role == 'integrator':
@@ -425,14 +431,26 @@ class Engine:
                         'SELECT * FROM events WHERE id > ? ORDER BY id LIMIT ?',
                         (db.execute("SELECT cursor FROM sessions WHERE role=?", (role,)).fetchone()[0],
                          EVENT_WINDOW))],
-                    'findings': [dict(r) for r in db.execute('SELECT * FROM findings')]}
+                    'findings': [dict(r) for r in db.execute('SELECT * FROM findings')],
+                    'hypotheses': [{'id': r['id'], 'weakness': r['weakness'], 'attack': r['attack'],
+                                    'predicted': r['predicted'], 'status': r['status'],
+                                    'evidence': r['evidence']}
+                                   for r in db.execute('SELECT id,weakness,attack,predicted,status,evidence '
+                                                       'FROM hypotheses ORDER BY id DESC LIMIT 10')],
+                    'reviews': [{'hypothesis': r['hypothesis'], 'verdict': r['verdict'],
+                                 'flaw': r['flaw'], 'advice': r['advice']}
+                                for r in db.execute('SELECT hypothesis,verdict,flaw,advice FROM reviews '
+                                                    'ORDER BY id DESC LIMIT 10')]}
 
     # ---- tools ----------------------------------------------------------------------------
     ALLOWED = {'generator': {'register'}, 'integrator': {'publish', 'reject'},
                'adversary': {'submit', 'compute', 'solve', 'oracle', 'analyse',
                              'hypothesize', 'resolve'},
-               'observer': {'record_finding'},
+               'observer': {'record_finding', 'critique'},
                WARDEN: {'report_leak'}}
+
+    FLAW_LABELS = ('ignored_own_analysis', 'unfalsifiable_prediction', 'no_fallback_after_refutation',
+                   'enumeration_as_analysis', 'untested_assumption', 'premature_stop', 'other')
 
     def tool(self, role, name, args):
         if name not in self.ALLOWED.get(role, set()):
@@ -602,6 +620,30 @@ class Engine:
                                                            'searched': budget,
                                                            'exhausted': budget < space})
             return {'solutions': solutions, 'searched': budget, 'exhausted': budget < space}
+        if name == 'critique':
+            # A process review, not a cryptographic one. Sound reasoning that ends in "I cannot break
+            # this" is a good result; a lucky guess is not.
+            hypothesis = int(args.get('hypothesis', 0))
+            verdict = args.get('verdict')
+            flaw = args.get('flaw')
+            advice = args.get('advice')
+            if verdict not in ('sound', 'flawed'):
+                raise ValueError('verdict must be sound or flawed')
+            if not isinstance(advice, str) or not 1 <= len(advice) <= 800:
+                raise ValueError('advice is required')
+            if verdict == 'flawed' and flaw not in self.FLAW_LABELS:
+                raise ValueError(f'unknown flaw label: {flaw}')
+            with self.tx() as db:
+                row = db.execute('SELECT id FROM hypotheses WHERE id=?', (hypothesis,)).fetchone()
+                if not row:
+                    raise ValueError('unknown hypothesis')
+                rid = db.execute('INSERT INTO reviews(hypothesis,role,verdict,flaw,advice,created) '
+                                 'VALUES(?,?,?,?,?,?)',
+                                 (hypothesis, role, verdict, flaw, advice, time.time())).lastrowid
+                self.event(db, 'critique_recorded', {'hypothesis': hypothesis, 'verdict': verdict,
+                                                     'flaw': flaw})
+            return {'review': rid, 'verdict': verdict, 'flaw': flaw}
+
         if name == 'record_finding':
             if set(args) != {'challenge', 'finding'} or not isinstance(args['finding'], str) \
                     or len(args['finding']) > 8000:

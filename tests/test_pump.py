@@ -519,6 +519,41 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(Engine(path).key_bits, 128)              # fresh CLI invocation
         self.assertEqual(Engine(path, key_bits=32).key_bits, 128)  # the run wins over the caller
 
+    def test_observer_can_red_team_a_hypothesis_and_the_adversary_sees_it(self):
+        """The review is process feedback: it must reach the Adversary, not just the record."""
+        self.cycle()
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'causal chain', 'attack': 'sequential_recovery',
+            'predicted': 'key recovered in 4096 evaluations'})
+        # the adversary's own analysis had already ruled this out; that is the flaw
+        reviewed = self.e.tool('observer', 'critique', {
+            'hypothesis': opened['hypothesis'], 'verdict': 'flawed',
+            'flaw': 'ignored_own_analysis',
+            'advice': 'check causal=false from key_schedule before proposing a causal-only attack'})
+        self.assertEqual(reviewed['verdict'], 'flawed')
+        reviews = self.e.view('adversary')['reviews']
+        self.assertEqual(len(reviews), 1)
+        self.assertEqual(reviews[0]['flaw'], 'ignored_own_analysis')
+        self.assertIn('causal=false', reviews[0]['advice'])
+
+    def test_only_the_observer_may_critique(self):
+        self.cycle()
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
+        for role in ('generator', 'integrator', 'adversary'):
+            with self.assertRaises(Denied):
+                self.e.tool(role, 'critique', {'hypothesis': opened['hypothesis'],
+                                               'verdict': 'sound', 'advice': 'fine'})
+
+    def test_a_flawed_verdict_requires_a_known_flaw_label(self):
+        self.cycle()
+        opened = self.e.tool('adversary', 'hypothesize', {
+            'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
+        with self.assertRaises(ValueError):
+            self.e.tool('observer', 'critique', {
+                'hypothesis': opened['hypothesis'], 'verdict': 'flawed',
+                'flaw': 'vibes', 'advice': 'try harder'})
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

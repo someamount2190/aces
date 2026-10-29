@@ -365,6 +365,14 @@ if a rung that used to survive now falls, the tool improved; if a rung regresses
 deliberate false negative — a rotation by the block length is a syntactic diffusion op that is semantically
 the identity — which is exactly the kind of gap a ladder exposes.
 
+**Process review.** The Observer may `critique` a hypothesis: a verdict (`sound`/`flawed`), a flaw label
+from a fixed vocabulary, and one sentence of advice. The verdict is about how the Adversary worked, not
+about whether the construction held — sound reasoning that ends in "I cannot break this" is a good result,
+and a lucky guess is not. Reviews are stored and surfaced in the Adversary's projection, so a flagged habit
+is visible on its next turn rather than living only in the audit trail. Labels are fixed rather than free
+text so the same failure can be counted across runs; free-form advice would be uncountable and therefore
+unmeasurable.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.
