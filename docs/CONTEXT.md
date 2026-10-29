@@ -3,6 +3,10 @@
 Provenance and current status of this codebase. Written 2026-10-29 after an audit and a live run so that
 later sessions (human or model) do not have to rediscover it.
 
+The target system is specified in [SPEC.md](SPEC.md); the design and its mapping onto this prototype, in
+[ARCHITECTURE.md](ARCHITECTURE.md); the build order, in [ROADMAP.md](ROADMAP.md). This file records where the
+code came from and what has actually been executed.
+
 ## What this is
 
 A runnable first implementation of the **Autonomous Cryptographic Evolution Sandbox**: a SQLite-backed

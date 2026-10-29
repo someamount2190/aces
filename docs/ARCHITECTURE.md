@@ -1,0 +1,344 @@
+# ACES — Target Architecture
+
+How ACES is built, how the trust boundaries are enforced, and how today's prototype maps onto the target.
+[SPEC.md](SPEC.md) defines *what*; [ROADMAP.md](ROADMAP.md) defines *order and ownership*.
+
+> **Status.** This is the target architecture. The repository contains a working vertical slice of it — a
+> single-process prototype with a real VM, real SQLite transactions, real role isolation at the service
+> layer, and a dashboard. It is **not** yet the system SPEC.md describes: no breach has ever been produced
+> by live models, arbitrary code execution is not available, and ten of eighteen required data entities do
+> not exist. Deviations are enumerated in §11 and traced back to requirements in §13.
+
+---
+
+## 1. Design principles
+
+1. **The verifier is deterministic and owns truth.** No LLM decides whether a breach happened. Candy,
+   escalation permission and `BREACH_VERIFIED` are all consequences of one transactional database commit.
+2. **Escalation is gated by a database predicate, not by agent intent.** A successor challenge can only be
+   inserted by a transaction that observes a `BREACHED` predecessor. Prompt instructions are advisory; the
+   constraint is not.
+3. **Blindness is service-layer projection.** Each role receives a distinct view and a distinct tool
+   allowlist. There is no shared conversation. This is enforceable in one process today; process and
+   filesystem isolation arrive with containers (Phase 8).
+4. **Model output is untrusted data.** It may only enter the system through a validated tool schema. It is
+   never executed, interpolated into SQL, or granted filesystem or network authority.
+5. **Everything that matters is an event.** State changes append an event in the same transaction. The
+   event log is the audit trail and the basis for Observer memory.
+6. **Difficulty is measured, not assumed** (SPEC §20). Every challenge version records its search space,
+   key size, oracle budget and attack-access mode, so a successor that merely raises parameters is visible
+   as such in the lineage.
+7. **Budgets are explicit.** Turns, wall-clock, CPU/memory per tool call, and oracle queries are configured
+   per role and consumed atomically.
+
+## 2. Process and trust model
+
+```
+                ┌──────────────────────────── trusted host process ────────────────────────────┐
+                │                                                                              │
+  admin browser │   dashboard (web.py)          coordinator (runtime.py)                       │
+  ──────────────┼──> loopback, CSRF, Host        │  schedule → dispatch → record               │
+                │   validation, admin-only       │                                             │
+                │        │                       ▼                                             │
+                │        │                 ┌──────────┐    tools      ┌────────────┐           │
+                │        └────────────────>│  Engine  │<─────────────>│ role tool  │           │
+                │                          │ core.py  │               │ dispatcher │           │
+                │                          └────┬─────┘               └────────────┘           │
+                │                               │  transactions only                           │
+                │                          ┌────▼─────┐    verifier   ┌────────────┐           │
+                │                          │ SQLite   │<─────────────>│  verify.py │           │
+                │                          │   WAL    │    (pure)     │  deterministic│        │
+                │                          └──────────┘               └────────────┘           │
+                └───────────────────────────────────────┬──────────────────────────────────────┘
+                                                        │ HTTPS / loopback HTTP
+                                          ┌─────────────▼──────────────┐
+                                          │ provider (provider.py)     │  four independent
+                                          │ per-role model + session   │  sessions, no fallback
+                                          └────────────────────────────┘
+```
+
+**Trusted:** the coordinator, the Engine, the verifier, the dashboard process, and the administrator.
+**Untrusted:** every model response, every submitted attack artifact, every event payload rendered in the
+UI.
+**Semi-trusted:** the Observer — it may read supervisory data but may not mutate truth (no candy, no
+escalation).
+
+## 3. Module layout
+
+Current files are small enough to split; the split below is what makes parallel work possible without
+merge collisions. Each module has exactly one owner (see ROADMAP §4).
+
+| Module | Responsibility | Status |
+|---|---|---|
+| `aces/schema.py` | DDL, migrations, indexes, constraints | **to create** (extract from `core.py`) |
+| `aces/core.py` | Engine: transactions, state machines, event append, queries | exists (179 lines) |
+| `aces/vm.py` | Bounded byte-permutation VM: `validate`, `transform` | **to extract** from `core.py` |
+| `aces/verify.py` | Deterministic verifier: correctness, attack evaluation, statistical tests | **to create** |
+| `aces/views.py` | Role projections and redaction | **to extract** from `core.view` |
+| `aces/tools.py` | Permission-scoped tool dispatch and argument schemas | **to extract** from `core.tool` |
+| `aces/runtime.py` | Coordinator: scheduling, dispatch, budgets, crash recovery | exists (62 lines) |
+| `aces/provider.py` | HTTP client: per-role config, redirect policy, timeouts, size caps | **to extract** from `runtime.py` |
+| `aces/observer.py` | Lineage, pattern detection, feedback generation | **to create** |
+| `aces/web.py` | Dashboard, lifecycle controls, audit export | exists (37 lines) |
+| `aces/prompts.py` | Role system prompts (versioned, reviewable) | **to extract** from `runtime.py` |
+
+`runtime.py` and `core.py` stay import-compatible during the split: no caller outside the package may need
+to change in a single step.
+
+## 4. Data model
+
+### 4.1 Required entities and current coverage
+
+SPEC §12 lists eighteen entities. Current schema has ten tables.
+
+| Spec entity | Current table | Gap |
+|---|---|---|
+| Agents | — | roles are a module constant; no configuration or identity row |
+| Sessions | `sessions` | OK (messages, turns, cursor) |
+| Permissions | — | hardcoded dict in `tool()`; not inspectable, not versioned |
+| Candidates | `candidates` | single row per digest; no version chain |
+| Candidate versions | — | **missing**; edits are impossible by design, but versions have no identity |
+| Tools | — | **missing**; tool availability is implicit in code |
+| Challenges | `challenges` | OK, but no `version`, no `mode` column (buried in `public`), no difficulty record |
+| Challenge versions | — | **missing**; `parent` chains challenges, not versions of one construction |
+| Attack attempts | `submissions` | stores only the plaintext guess; no script, no evidence bundle, no tool trace |
+| Breach verification | — | **missing**; evidence lives inside an event payload |
+| Candy rewards | `rewards` | OK (`challenge` PK, `submission` UNIQUE, `amount`) |
+| Observer findings | `findings` | OK, minimal (no classification, no confidence, no source links) |
+| Research sources | — | **missing** |
+| Construction lineage | `challenges.parent` | **missing** as first-class graph (candidate → candidate inheritance) |
+| Feedback | `feedback` | OK, minimal |
+| Event logs | `events` | append-only, but no aggregate id / sequence number; dedup is rowid-only |
+| Metrics | — | **missing**; token and CPU cost are not persisted |
+| Audit records | — | **missing**; secret-bearing evidence has no admin-only home |
+
+### 4.2 Target schema (Phase 1–3)
+
+```sql
+agents(id TEXT PRIMARY KEY, role TEXT UNIQUE, config TEXT, created REAL)
+permissions(role TEXT, tool TEXT, PRIMARY KEY(role, tool))
+tools(id TEXT PRIMARY KEY, name TEXT UNIQUE, schema TEXT, enabled INTEGER)
+candidates(id INTEGER PRIMARY KEY, name TEXT, status TEXT, created REAL)
+candidate_versions(id INTEGER PRIMARY KEY,
+                   candidate INTEGER REFERENCES candidates(id),
+                   version INTEGER, spec TEXT, digest TEXT UNIQUE,
+                   test_vectors TEXT, created REAL,
+                   UNIQUE(candidate, version))
+challenges(id INTEGER PRIMARY KEY, candidate_version INTEGER REFERENCES candidate_versions(id),
+           version INTEGER, state TEXT, mode TEXT, public TEXT, secret TEXT,
+           difficulty TEXT, parent INTEGER UNIQUE, published REAL)
+challenge_versions(id INTEGER PRIMARY KEY, challenge INTEGER, artifact TEXT, created REAL)
+submissions(id INTEGER PRIMARY KEY, challenge INTEGER, evidence TEXT, script TEXT,
+            tool_trace TEXT, valid INTEGER, UNIQUE(challenge, evidence))
+breach_verifications(id INTEGER PRIMARY KEY, challenge INTEGER UNIQUE, submission INTEGER UNIQUE,
+                     method TEXT, detail TEXT, created REAL)
+rewards(challenge INTEGER PRIMARY KEY, submission INTEGER UNIQUE, amount INTEGER, created REAL)
+findings(id INTEGER PRIMARY KEY, challenge INTEGER, classification TEXT, confidence REAL,
+         data TEXT, created REAL)
+research_sources(id INTEGER PRIMARY KEY, url TEXT, published REAL, retrieved REAL,
+                 confidence REAL, note TEXT)
+lineage(child_candidate INTEGER, parent_candidate INTEGER, reason TEXT,
+        PRIMARY KEY(child_candidate, parent_candidate))
+feedback(id INTEGER PRIMARY KEY, finding INTEGER, target TEXT, data TEXT, created REAL)
+events(seq INTEGER PRIMARY KEY AUTOINCREMENT, aggregate TEXT, aggregate_seq INTEGER,
+       kind TEXT, data TEXT, created REAL, UNIQUE(aggregate, aggregate_seq))
+metrics(id INTEGER PRIMARY KEY, role TEXT, work_id TEXT, tokens_in INTEGER, tokens_out INTEGER,
+        cpu_ms INTEGER, cost REAL, created REAL)
+audit_records(id INTEGER PRIMARY KEY, kind TEXT, payload TEXT, created REAL)
+```
+
+Invariants that must hold as constraints, not conventions:
+
+- `one_active` partial unique index on `challenges` where `state='ACTIVE'`.
+- A successor insert must observe `parent` in `BREACHED` — enforced in the same transaction.
+- `rewards.challenge` is a primary key, so a second candy for one challenge is impossible.
+- `submissions` unique on `(challenge, evidence)`, so a replay is a duplicate, not a new attempt.
+- `breach_verifications.challenge` unique, so one breach record per challenge.
+- `events(aggregate, aggregate_seq)` unique, so replaying a recovered log cannot double-insert.
+
+### 4.3 Migration policy
+
+`schema.py` owns a `migrations` table and numbered idempotent steps. No `CREATE TABLE IF NOT EXISTS`
+scattered through the Engine. Existing databases must migrate forward without data loss; a downgrade path
+is not required.
+
+## 5. State machines
+
+```
+challenge:  DRAFT ──publish──> ACTIVE ──verified breach──> BREACHED ──successor──> SUPERSEDED
+                                 └──────admin cancel──────> CANCELLED
+
+candidate:  PROPOSED ──correctness──> CORRECTNESS_TESTED ──published──> UNDER_ATTACK
+                                          └────────────broken──────────> BROKEN
+            any ──observer/deprecate──> DEPRECATED ──> ARCHIVED
+
+work item:  PENDING ──provider ok─────> DONE (turns+1, cursor advanced, history written)
+                 └──provider error────> DONE (turns+1, error_type recorded, no retry storm)
+```
+
+A challenge in `BREACHED` no longer accepts submissions. Only a transaction that writes
+`breach_verifications` may move `ACTIVE → BREACHED`, and only that same commit may insert the reward and
+append `BREACH_VERIFIED` + `CANDY_AWARDED` + `ESCALATION_AUTHORIZED`.
+
+## 6. Role projections and blindness
+
+`aces/views.py` produces one projection per role. Projections are built by explicit selection — never by
+serialising a row and deleting fields.
+
+| Data | Generator | Integrator | Adversary | Observer | Admin |
+|---|---|---|---|---|---|
+| Own session history | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Candidate catalog (specs) | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Active challenge public view | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Challenge secret (key, target plaintext) | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Verified breach — sanitized summary | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Verified breach — raw evidence incl. plaintext | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Adversary submissions / tool trace | ❌ | ❌ | own only | ✅ | ✅ |
+| Observer findings / feedback | received | ❌ | ❌ | ✅ | ✅ |
+| Resource metrics, cost | own | own | own | all | all |
+| Event log | ❌ | ❌ | ❌ | ✅ | ✅ |
+
+Known leak channels to close (see §11): the Integrator currently receives `breach_confirmed` event payloads
+verbatim, which include the recovered plaintext; and "sanitized" failure notifications are not yet
+sanitized.
+
+## 7. Tool surface
+
+One dispatcher per role; a tool is available only if it is in `permissions` for that role. Every tool has a
+declared JSON argument schema, a resource budget, and an audit event.
+
+| Tool | Role | Phase | Notes |
+|---|---|---|---|
+| `register` | generator | 1 | validate → exhaustive reversibility → digest → version |
+| `publish` | integrator | 2 | requires `DRAFT` correctness evidence and a `BREACHED` predecessor (or none) |
+| `submit` | adversary | 3 | evidence bundle, idempotent |
+| `compute` | adversary | 3 | key-space enumeration over a known pair; bounded |
+| `oracle_encrypt` | adversary | 5 | chosen-plaintext, query-budgeted, counted in metrics |
+| `oracle_decrypt` | adversary | 8 | chosen-ciphertext; only where the challenge permits it |
+| `record_finding` | observer | 5 | requires a linked `breach_verifications` row |
+| `read_public_source` | observer | 5 | outbound fetch, allowlisted, cached, cited |
+
+No tool may accept raw Python. Arbitrary code execution is a Phase 8 feature that requires a container and
+is explicitly out of scope until then.
+
+## 8. Verifier design
+
+`aces/verify.py` is pure: it takes a challenge record, a submission, and the secret material, and returns a
+verdict plus evidence. It performs no I/O and calls no model.
+
+**Correctness verification** (`register`, `publish`): exhaustive over the declared domain where the domain is
+small (8-bit keys, 0..4096-byte inputs sampled at boundaries), plus storage of the exact test vectors used.
+
+**Attack verification**, per category:
+
+| Category | Verification method | Phase |
+|---|---|---|
+| Plaintext recovery | constant-time exact comparison against the committed target | 3 (exists) |
+| Key recovery | submitted key must equal the committed key; verifier independently re-encrypts | 3 |
+| Authentication forgery | verifier recomputes the tag/MAC under the secret key | 3 |
+| Chosen-plaintext / known-plaintext | verifier re-runs the attack script against a holdout instance | 5 / 8 |
+| Distinguishing | pre-registered sample size, advantage estimate, one-sided binomial test, p < 1e-3 | 8 |
+| Randomness analysis | pre-registered statistical battery over verifier-generated output | 8 |
+| Protocol / implementation | replay inside the sandbox, diff against intended behaviour | 8 |
+
+**Statistical honesty rule:** a distinguishing result is only a breach if the experiment was specified before
+the data was collected, used verifier-generated randomness, and clears a multiple-comparison-corrected
+threshold. Otherwise it is recorded as an `ATTACK_REJECTED` with the measured advantage, not as a breach.
+
+**Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
+one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
+index and return the prior verdict without charging candy again.
+
+## 9. Event catalog
+
+Events carry small, typed payloads. Secret material never appears in an event payload; it lives in
+`audit_records` (admin-only) and is referenced by id.
+
+| Event | Aggregate | Payload (no secrets) |
+|---|---|---|
+| `CANDIDATE_REGISTERED` | candidate | candidate, version, digest |
+| `CHALLENGE_PUBLISHED` | challenge | challenge, mode, difficulty |
+| `CHALLENGE_ACTIVE` | challenge | challenge |
+| `ATTACK_SUBMITTED` | challenge | challenge, submission, category |
+| `ATTACK_REJECTED` | challenge | challenge, submission, reason, measured_advantage |
+| `BREACH_VERIFIED` | challenge | challenge, verification, method |
+| `CANDY_AWARDED` | challenge | challenge, amount, balance_after |
+| `ESCALATION_AUTHORIZED` | challenge | challenge |
+| `CHALLENGE_SUPERSEDED` | challenge | challenge, successor |
+| `OBSERVER_FINDING_CREATED` | candidate | finding, classification, confidence |
+| `GENERATOR_FEEDBACK_AVAILABLE` | feedback | feedback, finding |
+| `AGENT_EXECUTION_FAILED` | role | role, work_id, error_type |
+| `SYSTEM_PAUSED` | system | by (admin) |
+
+`model_turn` and `model_error` stay operational events but are excluded from the wake-up cursor, so
+scheduling is driven by domain events only.
+
+## 10. Concurrency, recovery and budgets
+
+- **Single writer, many readers.** One coordinator process per database (already required by the README).
+  SQLite in WAL, `BEGIN IMMEDIATE` for every mutation, 15 s busy timeout.
+- **Dispatch intent precedes the provider call.** `work_items` is written before the request and marked
+  `DONE` after; a crash leaves a `PENDING` item that recovery must reconcile on start-up (currently missing —
+  see §11, defect 7).
+- **Idle gating must be evaluated on a snapshot taken after the work item is committed** (defect 1). The
+  correct order is: read cursor → decide → `begin_work` (which bumps the event sequence) → dispatch. Idle
+  detection compares the role's cursor against the last *domain* event, and the cursor must only advance
+  when a turn is actually consumed.
+- **Budgets** are per role: lifetime turns, wall-clock per call, tokens, oracle queries. Exhaustion is a
+  recorded `AGENT_EXECUTION_FAILED` with `error_type='budget_exhausted'`, not a silent `continue`.
+- **Recovery on start-up:** mark orphaned `PENDING` items `ABANDONED` with an audit record; never re-issue a
+  provider call automatically (that would be a duplicate charge); require the next tick to create a new item.
+
+## 11. Current defects and their architectural fixes
+
+These are measured against the prototype by an executed audit (see `docs/CONTEXT.md`). Each maps to an
+owning phase.
+
+| # | Defect (observed) | Root cause | Architectural fix | Phase |
+|---|---|---|---|---|
+| 1 | Idle gating is dead code; idle agents burn their lifetime turn budget (`runtime.py:44-45` vs `core.py:85/98`) | cursor compared against an event maximum that `begin_work`/`finish_work` themselves advance | scheduler evaluates idleness on a post-commit snapshot; cursor advances only on a consumed turn; idle is recorded as a domain event, not inferred from prompt output | 4 |
+| 2 | Work items shared across concurrent dispatches (`core.py:81-82`) | `begin_work` returns an existing `PENDING` row instead of refusing | one item per dispatch, or `Denied` if a dispatch for that role is in flight; provider calls never run concurrently for one role | 4 |
+| 3 | API key forwarded across a redirect (`runtime.py:23`) | default `urlopen` redirect handler | `provider.py` uses a no-redirect opener and refuses cross-origin redirects | 4 |
+| 4 | Candy inflation: re-publishing a breached candidate, and secret-free/identity programs | `register` accepts any reversible program; `publish` does not require a new candidate version | verifier rejects programs whose published challenge has no secret-dependent term; a successor must reference a *new* `candidate_version` with a recorded `lineage` reason | 3 |
+| 5 | Web hardening gaps: `POST /control` skips Host validation, `/audit` unauthenticated and contains plaintext, `TypeError` on non-object JSON, no CSP | `web.py` ad-hoc parsing | single request-validation path; audit behind an admin token; strict JSON shape check; CSP + `X-Frame-Options: DENY` | 6 |
+| 6 | Docs and demo drift: test count stale, demo re-run leaks a candidate event | no generated documentation, non-idempotent demo | tests publish their own count; demo uses a fresh DB and refuses otherwise | 1 |
+| 7 | No crash reconciliation: a `PENDING` item survives a crash with no owner | start-up scan absent | recovery sweep marks orphans `ABANDONED`, emits audit record (see §10) | 4 |
+| 8 | Integrator receives raw breach payload including target plaintext | projection serialises the event row | sanitized failure projection: category, method, which property failed — **never** the secret | 2 |
+| 9 | Black-box mode is unsolvable: `public` omits `spec`, but `compute` requires a program | single attack path | black-box challenges must expose an oracle and a bounded `compute` variant that does not need the program, or the mode must be disabled with an explicit error | 5 |
+
+## 12. Security boundaries: now, next, later
+
+| Boundary | Now (single process) | Phase 8 (containers) |
+|---|---|---|
+| Agent ↔ agent data | service-layer projections + tool allowlist | separate processes, per-role filesystem, no shared mounts |
+| Model output ↔ host | never executed; JSON schema validated | unchanged |
+| Agent ↔ network | none: no tools perform outbound I/O except the provider | allowlisted egress proxy with per-role policy |
+| Agent ↔ secrets | secrets only in Engine memory/DB | secrets in coordinator only; workers receive derived material |
+| Dashboard ↔ agents | loopback + CSRF + Host checks | admin token, separate listener, no route reachable from worker context |
+| Arbitrary code | **not available** (no OS sandbox on this host; bubblewrap cannot create namespaces here) | microVM/container per submission |
+
+**Explicit non-goals until Phase 8:** running model-authored Python, evaluating untrusted attack scripts,
+calling decryption oracles on arbitrary input, and any claim of OS-level isolation.
+
+## 13. SPEC coverage
+
+| SPEC | Requirement | Where addressed | Status |
+|---|---|---|---|
+| §3 | Generator outputs 12 required fields | §4.2 `candidate_versions`, §7 `register` | partial (spec has 5 fields today) |
+| §4 | Breach-gated escalation | §5 state machine, §4.2 successor constraint | ✅ enforced |
+| §5 | Ten attack categories | §8 verification table | 1 of 10 implemented |
+| §6 | Observer intelligence | §3 `observer.py`, Phase 5 | not implemented |
+| §7 | Mutual blindness | §6 projection matrix | ✅ service-layer; leak 8 open |
+| §8 | Immutable versioned challenges, both modes | §4.2, §5 | partial (open only) |
+| §9 | Candy rules | §4.2 `rewards`, §8 exactly-once | ✅ |
+| §10 | Independent verifier | §8 | ✅ for plaintext recovery only |
+| §11 | Evolutionary feedback loop | §9 events, Phase 5 | partial |
+| §12 | 18 entities | §4.1 gap table | 8 of 18 (4 partial) |
+| §13 | Candidate status registry | §5 candidate machine | partial |
+| §14 | Tool catalog | §7 | 4 of ~8 tools |
+| §15 | Execution boundaries | §12 | service-layer only |
+| §16 | Event-driven autonomy | §9, §10 | **broken** (defect 1) |
+| §17 | Dashboard | Phase 6 | minimal |
+| §18 | 13 acceptance criteria | ROADMAP gates | all but two hold under deterministic tests; real-model execution and the full evolutionary cycle are not demonstrated end to end |
+| §19 | 8 phases | ROADMAP | Phase 1–3 partial |
+| §20 | Evaluation + risks | §4.2 difficulty field, §8 statistical rule | designed, not built |

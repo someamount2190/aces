@@ -1,5 +1,9 @@
 # Implementation plan and acceptance
 
+> **Superseded (2026-10-29).** The authoritative specification is [SPEC.md](SPEC.md), the design is
+> [ARCHITECTURE.md](ARCHITECTURE.md), and the build order and work decomposition are [ROADMAP.md](ROADMAP.md).
+> This file is retained as the record of the original six-step build plan.
+
 1. Foundation → SQLite state, event trail and role interfaces. Acceptance: restart preserves challenge and rewards.
 2. Sandbox (depends on 1) → executable bounded VM, candidate correctness, immutable-by-interface publication. Acceptance: toy recovery evaluated objectively.
 3. Reward engine (depends on 2) → transactional breach, reward and replacement gate. Acceptance: invalid and concurrent duplicate attempts cannot escalate or duplicate candy.

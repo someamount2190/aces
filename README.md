@@ -3,6 +3,15 @@
 A runnable first implementation of the Autonomous Cryptographic Evolution Sandbox.
 **Experimental toy cryptography only. No security or mathematical novelty claims.**
 
+## Documentation
+
+- [docs/SPEC.md](docs/SPEC.md) — the complete system specification. Normative: it defines what ACES must be.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — target architecture, trust boundaries, data model, and how
+  this prototype maps onto it (including every known deviation).
+- [docs/ROADMAP.md](docs/ROADMAP.md) — build order, work decomposition, file ownership and the rules the
+  work runs under.
+- [docs/CONTEXT.md](docs/CONTEXT.md) — provenance, audit findings and the record of the 2026-10-29 live run.
+
 ## Run
 
 Python 3.12+ recommended; core has no third-party dependencies.

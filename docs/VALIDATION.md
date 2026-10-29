@@ -1,5 +1,9 @@
 # Validation
 
+> **Current count: 11 tests** (this record says 10; a test was added after it was written). Documentation
+> drift is tracked as defect 6 in [ARCHITECTURE.md](ARCHITECTURE.md) §11. For the later live-model run and
+> its outcome, see [CONTEXT.md](CONTEXT.md).
+
 Build environment run: 10 unittest tests PASS (Python standard library).
 
 - Exhaustive reversible byte transformation checks across all 256 keys.
