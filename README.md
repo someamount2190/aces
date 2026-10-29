@@ -8,6 +8,8 @@ A runnable first implementation of the Autonomous Cryptographic Evolution Sandbo
 - [docs/SPEC.md](docs/SPEC.md) — the complete system specification. Normative: it defines what ACES must be.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — target architecture, trust boundaries, data model, and how
   this prototype maps onto it (including every known deviation).
+- [docs/AGENTS.md](docs/AGENTS.md) — how the four roles are actually staffed: subagent sessions, the dispatch
+  protocol, per-role charters, and the limits of that embodiment.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — build order, work decomposition, file ownership and the rules the
   work runs under.
 - [docs/CONTEXT.md](docs/CONTEXT.md) — provenance, audit findings and the record of the 2026-10-29 live run.

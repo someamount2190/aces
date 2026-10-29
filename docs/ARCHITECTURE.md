@@ -8,6 +8,10 @@ How ACES is built, how the trust boundaries are enforced, and how today's protot
 > layer, and a dashboard. It is **not** yet the system SPEC.md describes: no breach has ever been produced
 > by live models, arbitrary code execution is not available, and ten of eighteen required data entities do
 > not exist. Deviations are enumerated in §11 and traced back to requirements in §13.
+>
+> **Role embodiment.** The four roles are currently staffed by **harness subagent sessions**, not by provider
+> models, because the targets in SPEC §1 are not available on this host. The Engine, verifier and breach gate
+> are unchanged by that substitution; the independence and autonomy claims are not. See [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -63,6 +67,13 @@ UI.
 **Semi-trusted:** the Observer — it may read supervisory data but may not mutate truth (no candy, no
 escalation).
 
+**Role embodiment.** A model is reached through `RoleDriver` (`agents.py`). Today the only live
+implementation is `SubagentDriver`: the coordinator publishes a prompt as a work item, an orchestrating
+agent carries it to that role's persistent subagent session, and the reply is delivered back and validated.
+The coordinator still never calls a model directly, so the trust model above is unchanged — the orchestrator
+is a transport, not a participant, and it holds no authority over the breach gate. [AGENTS.md](AGENTS.md)
+defines that protocol, the four charters, and the limits it introduces.
+
 ## 3. Module layout
 
 Current files are small enough to split; the split below is what makes parallel work possible without
@@ -77,9 +88,11 @@ merge collisions. Each module has exactly one owner (see ROADMAP §4).
 | `aces/views.py` | Role projections and redaction | **to extract** from `core.view` |
 | `aces/tools.py` | Permission-scoped tool dispatch and argument schemas | **to extract** from `core.tool` |
 | `aces/runtime.py` | Coordinator: scheduling, dispatch, budgets, crash recovery | exists (62 lines) |
-| `aces/provider.py` | HTTP client: per-role config, redirect policy, timeouts, size caps | **to extract** from `runtime.py` |
-| `aces/observer.py` | Lineage, pattern detection, feedback generation | **to create** |
-| `aces/web.py` | Dashboard, lifecycle controls, audit export | exists (37 lines) |
+| `aces/provider.py` | HTTP client: per-role config, redirect policy, timeouts, size caps | **deferred** — no provider; `runtime.py` holds the current code until one exists |
+| `aces/agents.py` | `RoleDriver` protocol; `SubagentDriver` (today), `HttpDriver` (future), `MockDriver` (tests) | **to create** |
+| `aces/pump.py` | In-the-loop dispatch CLI: `dispatch`, `deliver`, `status`, `recover` | **to create** |
+| `aces/observer.py` | Lineage, pattern detection, feedback generation | **deferred** — findings exist; analysis is Phase 5+ |
+| `aces/web.py` | Dashboard, lifecycle controls, audit export | exists (37 lines); **deferred** beyond read-only status |
 | `aces/prompts.py` | Role system prompts (versioned, reviewable) | **to extract** from `runtime.py` |
 
 `runtime.py` and `core.py` stay import-compatible during the split: no caller outside the package may need
@@ -312,7 +325,8 @@ owning phase.
 |---|---|---|
 | Agent ↔ agent data | service-layer projections + tool allowlist | separate processes, per-role filesystem, no shared mounts |
 | Model output ↔ host | never executed; JSON schema validated | unchanged |
-| Agent ↔ network | none: no tools perform outbound I/O except the provider | allowlisted egress proxy with per-role policy |
+| Agent ↔ network | none: no tools perform outbound I/O except the role driver | allowlisted egress proxy with per-role policy |
+| Agent ↔ filesystem | **policy only** under subagent embodiment: role prompts disclose no path and request no file work | per-role container with no mount of the project or database |
 | Agent ↔ secrets | secrets only in Engine memory/DB | secrets in coordinator only; workers receive derived material |
 | Dashboard ↔ agents | loopback + CSRF + Host checks | admin token, separate listener, no route reachable from worker context |
 | Arbitrary code | **not available** (no OS sandbox on this host; bubblewrap cannot create namespaces here) | microVM/container per submission |
@@ -324,6 +338,7 @@ calling decryption oracles on arbitrary input, and any claim of OS-level isolati
 
 | SPEC | Requirement | Where addressed | Status |
 |---|---|---|---|
+| §2 | Four independent agents; mutual blindness | §6, [AGENTS.md](AGENTS.md) | four separate sessions over **one shared model**: contextual isolation, not statistical independence |
 | §3 | Generator outputs 12 required fields | §4.2 `candidate_versions`, §7 `register` | partial (spec has 5 fields today) |
 | §4 | Breach-gated escalation | §5 state machine, §4.2 successor constraint | ✅ enforced |
 | §5 | Ten attack categories | §8 verification table | 1 of 10 implemented |
@@ -337,8 +352,8 @@ calling decryption oracles on arbitrary input, and any claim of OS-level isolati
 | §13 | Candidate status registry | §5 candidate machine | partial |
 | §14 | Tool catalog | §7 | 4 of ~8 tools |
 | §15 | Execution boundaries | §12 | service-layer only |
-| §16 | Event-driven autonomy | §9, §10 | **broken** (defect 1) |
-| §17 | Dashboard | Phase 6 | minimal |
-| §18 | 13 acceptance criteria | ROADMAP gates | all but two hold under deterministic tests; real-model execution and the full evolutionary cycle are not demonstrated end to end |
-| §19 | 8 phases | ROADMAP | Phase 1–3 partial |
+| §16 | Event-driven autonomy | §9, §10, AGENTS.md §9 | **broken twice**: dead idle gating (defect 1), plus one orchestrator turn per tick under subagent embodiment |
+| §17 | Dashboard | Phase 5 (deferred) | minimal; not on the critical path |
+| §18 | 13 acceptance criteria | ROADMAP gates | all but three hold under deterministic tests; real-provider execution, unattended operation and the full evolutionary cycle are not demonstrated |
+| §19 | 8 phases | ROADMAP | phases 1–3 collapse into one thin slice; 4 relayed; 5–8 deferred |
 | §20 | Evaluation + risks | §4.2 difficulty field, §8 statistical rule | designed, not built |
