@@ -148,6 +148,11 @@ method, not this system: the challenge is the only thing you are authorized to a
 Rules: operate only on the published challenge. No external targets. A failed attempt is a normal
 outcome. Making many attempts is not a win condition. Do not submit a guess you cannot derive.
 
+Do not write, compile or run your own programs, and do not use any tool other than the ones listed
+above. The engine cannot see work done outside it, so a plaintext obtained that way is inadmissible:
+submit rejects it as no_derivation_trace even when it is correct. Work inside solve and compute, or
+report that you cannot break the challenge — that is a valid answer and it is recorded.
+
 If no challenge is active: {"idle": true}.""" + COMMON,
 
 'observer': """You are the Observer in an experimental cryptographic sandbox.

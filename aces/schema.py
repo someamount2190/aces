@@ -120,6 +120,19 @@ CREATE TABLE IF NOT EXISTS rejections(
     detail TEXT,
     created REAL NOT NULL);
 
+-- A role's question to the outside world, and the answer it was given. The engine cannot browse, so
+-- a request waits for the orchestrator to fill it; the point is that the query and its source are
+-- recorded rather than happening invisibly inside a session.
+CREATE TABLE IF NOT EXISTS research_requests(
+    id INTEGER PRIMARY KEY,
+    challenge INTEGER,
+    role TEXT NOT NULL,
+    query TEXT NOT NULL,
+    result TEXT,
+    status TEXT NOT NULL,
+    created REAL NOT NULL,
+    answered REAL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 
