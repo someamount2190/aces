@@ -126,6 +126,24 @@ def valid_method(method):
 
 LINEAR_OPS = ('xor', 'xor_key', 'chain_xor', 'rol')
 
+# Operations that break the causal structure: one that moves data between positions in both
+# directions (a buffer rotation or permutation). Without one of these, every operation is either
+# position-local or forward-causal, so byte i depends only on bytes 0..i — and the key falls one
+# byte at a time. The tuple is empty, which is exactly why every construction is currently trivial.
+DIFFUSION_OPS = ()
+
+
+def is_causal(program):
+    """True when output byte i depends only on input bytes 0..i.
+
+    Every op in the current set is either position-local or a left-to-right chain, so this is true
+    for every program the VM can express. The consequence is sharp: byte 0 is a per-byte function of
+    plaintext byte 0 and key byte 0 alone, so one known pair yields the first key byte in 256 trials
+    and each further byte follows. Total work is key_bytes * 256, not 2^(key_bits) — RUN-007's
+    Generator proved this and declined to keep proposing candidates against it.
+    """
+    return not any(op in DIFFUSION_OPS for op, _ in program)
+
 
 def _bits(data):
     out = []

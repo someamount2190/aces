@@ -338,10 +338,19 @@ class PumpTests(unittest.TestCase):
     def test_integrator_sees_a_measured_assessment(self):
         self.register()
         entry = self.e.view('integrator')['catalog'][0]
-        self.assertEqual(entry['assessment']['known_plaintext_work'], 65536)
+        # 16-bit test engine: the causal bound (2 key bytes x 256) beats the 2^16 key space
+        self.assertEqual(entry['assessment']['known_plaintext_work'], 512)
         self.assertEqual(entry['assessment']['key_bits'], 16)
+        self.assertTrue(entry['assessment']['causal'])
         self.assertTrue(entry['assessment']['byte_local'])     # this spec has no chain op
         self.assertGreaterEqual(entry['assessment']['key_ops'], 1)
+
+    def test_every_program_in_the_op_set_is_causal(self):
+        """RUN-007: the Generator proved a 2^10 key recovery for every construction, and stopped."""
+        from aces.verify import is_causal
+        self.assertTrue(is_causal([['xor_key', 0], ['rol', 3], ['chain_add', 0]]))
+        self.assertTrue(is_causal([['xor', 1], ['chain_xor', 0], ['add_key', 0]]))
+        self.assertTrue(is_causal([['chain_add', 0], ['chain_xor', 0], ['rol', 7]]))
 
     def test_chain_ops_mix_across_positions_and_invert(self):
         from aces.verify import is_reversible, transform

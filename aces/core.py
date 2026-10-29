@@ -7,7 +7,7 @@ import contextlib, hashlib, json, secrets, sqlite3, time
 
 from .schema import apply, DOMAIN_EVENTS
 from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
-                     valid_method, key_bytes, gf2_linear_attack, is_gf2_linear,
+                     valid_method, key_bytes, gf2_linear_attack, is_gf2_linear, is_causal,
                      DEFAULT_KEY_BITS, COMPUTE_BUDGET, CHAIN_OPS)
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
@@ -41,8 +41,13 @@ def assess(spec, key_bits=DEFAULT_KEY_BITS):
     """
     program = spec.get('program', [])
     mixes = any(str(op) in CHAIN_OPS for op, _ in program)
+    # A causal construction (every op position-local or forward-chaining) gives up one key byte per
+    # position, so the real known-plaintext cost is key_bytes * 256, not 2^key_bits.
+    causal = is_causal(program)
+    sequential = (key_bits // 8) * 256
     return {'key_bits': key_bits,
-            'known_plaintext_work': 1 << key_bits,
+            'known_plaintext_work': min(1 << key_bits, sequential) if causal else (1 << key_bits),
+            'causal': causal,
             'byte_local': not mixes,
             'key_ops': sum(1 for op, _ in program if str(op).endswith('_key')),
             'program_length': len(program)}
