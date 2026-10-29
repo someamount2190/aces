@@ -284,6 +284,21 @@ a leaked secret are the same event to the verifier (run 002 demonstrated exactly
 is re-derived by our code from the challenge itself, so correctness rests on the tool's search rather than
 the session's assertion, and `breach_confirmed` records `method: tool_compute`.
 
+**Admission gate.** Before publishing, the Integrator may `reject{candidate, reason, detail}`. The refusal
+binds: `publish` refuses a rejected candidate, the reason is recorded in `rejections` and appears in the
+Generator's projection, and `candidate_rejected` is a wake-up event, so the Generator is re-dispatched to
+produce a different construction rather than the same one again. The Integrator sees a measured
+`assessment` per candidate — key bits, known-plaintext work, byte-locality, key-op count — so the refusal
+rests on a number rather than on taste. A second rejection reason is available by design: a standard
+construction whose break is already published produces a foregone conclusion, and a challenge whose answer
+is already known teaches nothing.
+
+**Consequence to be honest about.** Under the current VM every construction measures the same: 8-bit key,
+256-trial known-plaintext search, byte-local operations. A faithful Integrator therefore rejects everything,
+and the loop stalls at the gate. That is not a fault in the gate — it is the VM reporting what it can
+express. Lifting it requires the construction language to gain parameters that actually raise the cost of a
+known-plaintext search: a wider key, cross-byte mixing, or a state that carries between blocks.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.

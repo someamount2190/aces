@@ -31,6 +31,22 @@ def contract(spec):
     return {k: spec[k] for k in SPEC_FIELDS if k in spec}
 
 
+def assess(spec):
+    """Structural facts about a construction, so a difficulty judgement has a number under it.
+
+    These are properties of the VM, not opinions: every key is one byte, every operation acts on
+    one byte, and a known-plaintext search therefore costs at most 256 trials. Any construction the
+    current VM can express is breakable this way — the assessment exists so the Integrator can say
+    so instead of guessing, and so "harder" can eventually mean something measured.
+    """
+    program = spec.get('program', [])
+    return {'key_bits': 8,
+            'known_plaintext_work': 256,
+            'byte_local': True,
+            'key_ops': sum(1 for op, _ in program if str(op).endswith('_key')),
+            'program_length': len(program)}
+
+
 class Denied(ValueError):
     pass
 
@@ -203,6 +219,19 @@ class Engine:
             self.event(db, 'candidate_registered', {'candidate': cid})
         return {'candidate': cid, 'status': 'experimental'}
 
+    def reject(self, candidate, reason, detail=None):
+        """Refuse a candidate before publication. The refusal binds: it cannot then be published."""
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
+            raise ValueError('invalid rejection reason')
+        with self.tx() as db:
+            row = db.execute('SELECT id FROM candidates WHERE id=?', (candidate,)).fetchone()
+            if not row:
+                raise ValueError('unknown candidate')
+            db.execute('INSERT INTO rejections(candidate,reason,detail,created) VALUES(?,?,?,?)',
+                       (candidate, reason.strip(), (detail or '')[:2000], time.time()))
+            self.event(db, 'candidate_rejected', {'candidate': candidate, 'reason': reason.strip()})
+        return {'rejected': candidate, 'reason': reason.strip()}
+
     def publish(self, candidate, mode='open', parent=None):
         if mode not in ('open', 'blackbox'):
             raise ValueError('invalid mode')
@@ -215,6 +244,10 @@ class Engine:
             row = db.execute('SELECT spec FROM candidates WHERE id=?', (candidate,)).fetchone()
             if not row:
                 raise ValueError('unknown candidate')
+            refused = db.execute('SELECT reason FROM rejections WHERE candidate=? ORDER BY id DESC LIMIT 1',
+                                 (candidate,)).fetchone()
+            if refused:
+                raise Denied(f"candidate rejected: {refused['reason']}")
             spec = json.loads(row[0])
             if not has_secret_term(spec['program']):
                 raise Denied('candidate has no secret-dependent term')
@@ -329,13 +362,17 @@ class Engine:
                 # that a property failed, not what the answer was.
                 failures = [{k: v for k, v in json.loads(r[0]).items() if k != 'plaintext'}
                             for r in db.execute("SELECT data FROM events WHERE kind='breach_confirmed'")]
+                catalog = [dict(entry, assessment=assess(entry['spec'])) for entry in catalog]
                 return {'challenge': challenge, 'catalog': catalog, 'verified_failures': failures}
             if role == 'generator':
                 # How each challenge fell, so the next construction can be built against the method
                 # rather than against the answer. A breach without a method would teach nothing.
                 failures = [{'challenge': r['challenge'], 'method': r['method']}
                             for r in db.execute('SELECT challenge,method FROM methods ORDER BY id')]
-                return {'catalog': catalog, 'failures': failures,
+                rejections = [{'candidate': r['candidate'], 'reason': r['reason']}
+                              for r in db.execute('SELECT candidate,reason FROM rejections '
+                                                  'ORDER BY id DESC LIMIT 5')]
+                return {'catalog': catalog, 'failures': failures, 'rejections': rejections,
                         'feedback': [json.loads(r[0]) for r in db.execute('SELECT data FROM feedback')]}
             return {'events': [dict(r) for r in db.execute(
                         'SELECT * FROM events WHERE id > ? ORDER BY id LIMIT ?',
@@ -344,7 +381,7 @@ class Engine:
                     'findings': [dict(r) for r in db.execute('SELECT * FROM findings')]}
 
     # ---- tools ----------------------------------------------------------------------------
-    ALLOWED = {'generator': {'register'}, 'integrator': {'publish'},
+    ALLOWED = {'generator': {'register'}, 'integrator': {'publish', 'reject'},
                'adversary': {'submit', 'compute'}, 'observer': {'record_finding'},
                WARDEN: {'report_leak'}}
 
@@ -355,6 +392,8 @@ class Engine:
             return self.register(**args)
         if name == 'publish':
             return self.publish(**args)
+        if name == 'reject':
+            return self.reject(**args)
         if name == 'submit':
             return self.submit(**args)
         if name == 'compute':

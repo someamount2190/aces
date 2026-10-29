@@ -109,8 +109,12 @@ message carries only the projection.
 
 - **Objective:** construct and publish a functioning challenge from the available catalog; escalate only
   after a verified breach.
-- **Tools:** `publish{candidate, mode, parent}`.
+- **Tools:** `publish{candidate, mode, parent}`, `reject{candidate, reason, detail}`.
 - **Output:** exactly one JSON object, or `{"idle": true}`.
+- **Gate:** read the candidate's measured `assessment` before publishing. Reject when the known-plaintext
+  work is trivial, when the construction is byte-local with no cross-byte mixing, or when it is a standard
+  design whose break is already known. Rejection binds — the candidate cannot then be published — so the
+  reason must be something the Generator can act on.
 - **Rules:** publish only when no active challenge exists; after a breach, the successor must use a
   different candidate version and its parent must be the breached challenge; you are told *that* a breach
   occurred and *which property failed* — never the recovered secret.

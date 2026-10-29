@@ -111,14 +111,23 @@ CREATE TABLE IF NOT EXISTS methods(
     detail TEXT,
     created REAL NOT NULL);
 
+-- A candidate refused before publication, with the reason. Rejection is a gate, not a suggestion:
+-- a rejected candidate cannot be published, and the reason is shown to the Generator.
+CREATE TABLE IF NOT EXISTS rejections(
+    id INTEGER PRIMARY KEY,
+    candidate INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    detail TEXT,
+    created REAL NOT NULL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 
 # Domain events a role may wake on. model_turn / model_error are operational only: if they counted,
 # a role would wake itself every tick, which is exactly the idle-gating defect this design avoids.
 DOMAIN_EVENTS = (
-    'candidate_registered', 'published', 'submission_evaluated', 'breach_confirmed',
-    'feedback_recorded', 'finding_recorded', 'administrative_control',
+    'candidate_registered', 'candidate_rejected', 'published', 'submission_evaluated',
+    'breach_confirmed', 'feedback_recorded', 'finding_recorded', 'administrative_control',
 )
 
 

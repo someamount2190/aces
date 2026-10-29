@@ -297,6 +297,40 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(self.e.view('generator')['failures'],
                          [{'challenge': cid, 'method': 'known_plaintext_key_search'}])
 
+    def test_rejection_blocks_publication(self):
+        """The Integrator's gate binds: a refused candidate cannot be published at all."""
+        cid = self.register()
+        out = self.e.reject(cid, 'no diffusion between bytes; a 256-trial scan is the whole attack')
+        self.assertEqual(out['rejected'], cid)
+        with self.assertRaises(Denied):
+            self.e.publish(cid)
+        work = self.by_role(dispatch(self.e))
+        if 'integrator' in work:
+            deny = deliver(self.e, work['integrator']['work_id'],
+                           json.dumps({'tool': 'publish', 'args': {'candidate': cid}}))
+            self.assertEqual(deny['error'], 'ToolDenied')
+        self.assertEqual(self.e.view('adversary')['challenge'], None)
+
+    def test_rejection_reaches_the_generator(self):
+        cid = self.register()
+        self.e.reject(cid, 'no diffusion between bytes', 'byte-local, 256 trials')
+        rejections = self.e.view('generator')['rejections']
+        self.assertEqual(rejections[0]['candidate'], cid)
+        self.assertIn('no diffusion', rejections[0]['reason'])
+
+    def test_integrator_sees_a_measured_assessment(self):
+        self.register()
+        entry = self.e.view('integrator')['catalog'][0]
+        self.assertEqual(entry['assessment']['known_plaintext_work'], 256)
+        self.assertTrue(entry['assessment']['byte_local'])
+        self.assertGreaterEqual(entry['assessment']['key_ops'], 1)
+
+    def test_only_the_integrator_may_reject(self):
+        cid = self.register()
+        out = deliver(self.e, self.by_role(dispatch(self.e))['generator']['work_id'],
+                      json.dumps({'tool': 'reject', 'args': {'candidate': cid, 'reason': 'no'}}))
+        self.assertEqual(out['error'], 'ToolDenied')
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))
