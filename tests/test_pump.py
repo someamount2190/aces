@@ -407,6 +407,32 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(wide.view('adversary')['candy'], 0)
         self.assertEqual(wide.view('integrator')['catalog'][0]['assessment']['key_bits'], 32)
 
+    def test_diffusion_breaks_causality_but_not_linearity(self):
+        """Diffusion alone is not an escape: rot_bytes is GF(2)-linear, so xor-only still falls."""
+        from aces.verify import is_causal, is_gf2_linear
+        both = [['xor_key', 0], ['chain_add', 0], ['rot_bytes', 5], ['add_key', 0], ['rol', 3]]
+        self.assertFalse(is_causal(both))
+        self.assertFalse(is_gf2_linear(both))          # survives the sequential attack and the linear one
+        linear_only = [['xor_key', 0], ['rot_bytes', 5], ['rol', 3]]
+        self.assertFalse(is_causal(linear_only))
+        self.assertTrue(is_gf2_linear(linear_only))    # diffusion without an addition is still affine
+
+    def test_a_diffusion_construction_reads_as_the_full_key_space(self):
+        spec = dict(SPEC, name='diffused',
+                    program=[['xor_key', 0], ['chain_add', 0], ['rot_bytes', 5],
+                             ['add_key', 0], ['rol', 3]])
+        cid = self.e.register(spec)['candidate']
+        entry = [e for e in self.e.view('integrator')['catalog'] if e['id'] == cid][0]
+        self.assertFalse(entry['assessment']['causal'])
+        self.assertEqual(entry['assessment']['known_plaintext_work'], 65536)   # 16-bit test engine
+
+    def test_rot_bytes_inverts_and_moves_data_both_ways(self):
+        from aces.verify import transform
+        data = bytes(range(24))
+        cipher = transform(data, b'\x00\x01', [['rot_bytes', 5], ['xor_key', 0]])
+        self.assertEqual(transform(cipher, b'\x00\x01', [['rot_bytes', 5], ['xor_key', 0]], True), data)
+        self.assertNotEqual(data[:4], transform(data, b'\x00\x01', [['rot_bytes', 5]])[:4])
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

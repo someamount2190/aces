@@ -30,6 +30,7 @@ The program is 1..32 straight-line steps from this fixed set (no names, imports,
   ["rol",n]       rotate the byte left by n bits
   ["chain_add",n] each byte becomes its running sum with the previous byte, mod 256
   ["chain_xor",n] each byte is XORed with the previous byte
+  ["rot_bytes",n] rotate the whole buffer left by n positions
 
 The key is 32 bits (four bytes), used round-robin by position: byte 0 sees key[0], byte 1 sees key[1],
 byte 4 sees key[0] again, and so on. The operand of a *_key step is a PLACEHOLDER: the engine ignores
@@ -37,16 +38,20 @@ it and substitutes the key byte, which is different for every challenge and neve
 program containing at least one *_key step is keyed; one with none is unkeyed and will be rejected at
 publication, because it can be inverted from public information alone.
 
-chain_add and chain_xor move information between positions. Without at least one of them the
-construction is a per-byte map: every byte is enciphered independently, and a known-plaintext search
-costs 2^32 trials whatever else the program does. With one, byte i depends on all earlier bytes and
-the search no longer decomposes per position.
+Two independent conditions must both hold, and they are easy to confuse:
 
-There is a second structural requirement: **include at least one addition** (add, add_key or
-chain_add). A program built only from xor, xor_key, chain_xor and rol is affine over GF(2) in the key
-and the data, and an affine construction is recovered from a single known pair by linear algebra —
-33 evaluations for a 32-bit key, not 2^32. Such a construction will be rejected as trivial, or broken
-immediately if it is published.
+**Diffusion.** Include ["rot_bytes",n]. Every other operation is position-local or forward-causal, so
+without a rotation output byte i depends only on input bytes 0..i, and one known pair then recovers
+key byte 0, then byte 1, and so on — about 4 x 256 evaluations for the whole key, whatever the rest of
+the program does. A rotation carries later bytes back to earlier positions and breaks that.
+
+**Non-linearity.** Include at least one addition (add, add_key or chain_add). A program built only from
+xor, xor_key, chain_xor and rotations is affine over GF(2) in the key and the data, and an affine
+construction is recovered from one known pair by linear algebra — 33 evaluations for a 32-bit key.
+
+Diffusion without an addition is still linear and still falls. An addition without diffusion still
+falls to the per-byte recovery. You need both, and the Integrator will reject a construction that has
+only one.
 
 Hard requirements: at least one *_key operation; the composition must be exactly invertible; every
 operand is 0..255.

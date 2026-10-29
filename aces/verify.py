@@ -13,7 +13,7 @@ import hashlib
 # the loop end to end.
 DEFAULT_KEY_BITS = 32
 COMPUTE_BUDGET = 1 << 20          # keys a single compute call will enumerate before declaring defeat
-OPS = ('xor_key', 'add_key', 'xor', 'add', 'rol', 'chain_add', 'chain_xor')
+OPS = ('xor_key', 'add_key', 'xor', 'add', 'rol', 'chain_add', 'chain_xor', 'rot_bytes')
 CHAIN_OPS = ('chain_add', 'chain_xor')
 
 
@@ -50,6 +50,12 @@ def transform(data, key, program, inverse=False):
     steps = list(reversed(program)) if inverse else program
 
     for op, n in steps:
+        if op == 'rot_bytes':
+            if buf:
+                shift = n % len(buf)
+                if shift:
+                    buf = buf[-shift:] + buf[:-shift] if inverse else buf[shift:] + buf[:shift]
+            continue
         if op == 'chain_add':
             order = range(len(buf) - 1, 0, -1) if inverse else range(1, len(buf))
             for i in order:
@@ -124,13 +130,16 @@ def valid_method(method):
     return method in METHODS
 
 
-LINEAR_OPS = ('xor', 'xor_key', 'chain_xor', 'rol')
+LINEAR_OPS = ('xor', 'xor_key', 'chain_xor', 'rol', 'rot_bytes')
 
 # Operations that break the causal structure: one that moves data between positions in both
-# directions (a buffer rotation or permutation). Without one of these, every operation is either
-# position-local or forward-causal, so byte i depends only on bytes 0..i — and the key falls one
-# byte at a time. The tuple is empty, which is exactly why every construction is currently trivial.
-DIFFUSION_OPS = ()
+# directions. rot_bytes rotates the whole buffer, so byte 0 can carry information from the last byte
+# — with it, the sequential one-byte-at-a-time key recovery of RUN-007 no longer applies.
+#
+# It is GF(2)-linear, so diffusion alone is not enough: a program built from xor and rot_bytes and no
+# addition is still affine and still falls to the linear attack. A construction needs a diffusion op
+# *and* a non-linear one.
+DIFFUSION_OPS = ('rot_bytes',)
 
 
 def is_causal(program):

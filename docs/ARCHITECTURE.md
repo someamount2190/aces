@@ -299,12 +299,25 @@ and the loop stalls at the gate. That is not a fault in the gate — it is the V
 express. Lifting it requires the construction language to gain parameters that actually raise the cost of a
 known-plaintext search: a wider key, cross-byte mixing, or a state that carries between blocks.
 
-**Construction language (v3).** Seven operations: five byte-local (`xor_key`, `add_key`, `xor`, `add`,
-`rol`) and two that mix across positions (`chain_add`, `chain_xor`, both invertible by reversing the
-sweep direction). The key is **32 bits** by default, consumed round-robin by byte position; the width is a
-per-run parameter, so a small width can still exercise the loop end to end. Reversibility is checked
-exhaustively over the 256-value byte domain and sampled over the key space — exhaustive over both would
-cost billions of transformations per registration and prove nothing the sample does not.
+**Construction language (v4).** Eight operations: five byte-local (`xor_key`, `add_key`, `xor`, `add`,
+`rol`), two forward chains (`chain_add`, `chain_xor`), and one whole-buffer rotation (`rot_bytes`). The key
+is 32 bits by default, consumed round-robin by byte position; the width is a per-run parameter.
+
+Two defects in the language, found by running it, define what a construction must now satisfy:
+
+1. **Causality.** With only position-local and forward-chaining operations, output byte *i* depends only on
+   input bytes `0..i`. One known pair then fixes key byte 0 in 256 trials, then byte 1, and so on — about
+   `key_bytes × 256` evaluations for the whole key, independent of key width. RUN-007's Generator proved
+   this and stopped proposing. `rot_bytes` is the operation that breaks it: a buffer rotation carries later
+   bytes back to earlier positions. `is_causal()` reports whether a program still has the defect, and
+   `assess()` uses the causal bound for `known_plaintext_work` when it does.
+2. **Linearity.** A program built only from `xor`, `xor_key`, `chain_xor`, `rol` and `rot_bytes` is affine
+   over GF(2), so one known pair fixes the key by Gaussian elimination — 33 evaluations for a 32-bit key.
+   `rot_bytes` is itself GF(2)-linear, so diffusion alone does not escape this; an addition is required
+   too.
+
+A construction therefore needs a diffusion op **and** a non-linear one. Neither is sufficient alone, and the
+Integrator can check both properties before publishing.
 
 `compute` now carries an explicit search budget: at most 2^20 keys per call, returning
 `{"solutions": [], "exhausted": true, "searched": 1048576}` when the space is wider than that. Exhaustion is
