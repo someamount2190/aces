@@ -298,11 +298,11 @@ class Engine:
             key = secrets.token_bytes(self.key_bits // 8)
             plain = secrets.token_bytes(24)
             public = {'mode': mode, 'category': 'plaintext_recovery', 'key_bits': self.key_bits,
+                      'oracle_budget': workbench.ORACLE_LIMIT,
                       'ciphertext': transform(plain, key, spec['program']).hex(),
                       'known_plaintext': '00010203',
                       'known_ciphertext': transform(bytes(range(4)), key, spec['program']).hex(),
-                      'rules': 'Recover exact target plaintext. Toy 8-bit key. No external targets.',
-                      'oracle_budget': 0}
+                      'rules': 'Recover exact target plaintext. Toy 8-bit key. No external targets.'}
             if mode == 'open':
                 public['spec'] = contract(spec)
             cur = db.execute('INSERT INTO challenges(candidate,state,public,secret,parent,published) VALUES(?,?,?,?,?,?)',

@@ -132,6 +132,16 @@ def deliver(engine, work_id, answer):
                                                         'tokens': flagged})
 
     if action.get('idle'):
+        # An idle turn with an active challenge and nothing on record is not an investigation, and it
+        # leaves the Reviewer nothing to audit. Make the reasoning explicit first.
+        if role == 'adversary':
+            with engine.connect() as db:
+                active = db.execute("SELECT id FROM challenges WHERE state='ACTIVE'").fetchone()
+                recorded = db.execute('SELECT COUNT(*) FROM hypotheses WHERE challenge=?',
+                                      (active['id'],)).fetchone()[0] if active else 0
+            if active and not recorded:
+                return fail('HypothesisRequired',
+                            'record a hypothesis before idling while a challenge is active')
         engine.finish_work(work_id, answer, outcome='idle',
                            messages=(history + [{'role': 'assistant', 'content': answer},
                                                 {'role': 'user', 'content': '{"idle":true}'}])[-20:])

@@ -572,6 +572,21 @@ class PumpTests(unittest.TestCase):
         self.assertEqual(out['status'], 'ok', out)
         self.assertEqual(self.e.hypotheses_awaiting_review(), 0)
 
+    def test_published_oracle_budget_matches_the_tool(self):
+        """RUN-012: the public said 0 while the tool allowed 64, so the Adversary never tried it."""
+        self.cycle()
+        public = self.e.view('adversary')['challenge']['public']
+        self.assertEqual(public['oracle_budget'], 64)
+
+    def test_adversary_must_record_a_hypothesis_before_idling(self):
+        self.cycle()
+        first = self.by_role(dispatch(self.e))['adversary']
+        refused = deliver(self.e, first['work_id'], '{"idle": true}')
+        self.assertEqual(refused['error'], 'HypothesisRequired')
+        self.e.tool('adversary', 'hypothesize', {'weakness': 'w', 'attack': 'a', 'predicted': 'p'})
+        second = self.by_role(dispatch(self.e))['adversary']
+        self.assertEqual(deliver(self.e, second['work_id'], '{"idle": true}')['status'], 'idle')
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))
