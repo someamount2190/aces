@@ -263,6 +263,17 @@ small (8-bit keys, 0..4096-byte inputs sampled at boundaries), plus storage of t
 the data was collected, used verifier-generated randomness, and clears a multiple-comparison-corrected
 threshold. Otherwise it is recorded as an `ATTACK_REJECTED` with the measured advantage, not as a breach.
 
+**Provenance gate.** `compute` persists every solution set it produces (`derivations`). A submission is a
+breach only when one of those sets contains the submitted plaintext. A correct answer reached any other
+way — worked out in the session, computed with the session's own tools, or read from somewhere it should not
+have been — is rejected with `no_derivation_trace`: no candy, no state change, and the challenge stays
+ACTIVE so a traced attempt can still succeed.
+
+This exists because a subagent can run its own arithmetic. Without the gate, a legitimate offline solve and
+a leaked secret are the same event to the verifier (run 002 demonstrated exactly that). With it, the answer
+is re-derived by our code from the challenge itself, so correctness rests on the tool's search rather than
+the session's assertion, and `breach_confirmed` records `method: tool_compute`.
+
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique
 index and return the prior verdict without charging candy again.

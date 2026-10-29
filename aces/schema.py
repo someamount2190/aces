@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS leaks(
     evidence TEXT NOT NULL,
     created REAL);
 
+-- What the bounded search actually produced. A submission is only a breach if one of these
+-- derivations contains it: the answer must come from the declared tool path, not from the
+-- adversary's own arithmetic or from anything it should not have seen.
+CREATE TABLE IF NOT EXISTS derivations(
+    id INTEGER PRIMARY KEY,
+    challenge INTEGER,
+    role TEXT NOT NULL,
+    program TEXT NOT NULL,
+    solutions TEXT NOT NULL,
+    created REAL NOT NULL);
+
 INSERT OR IGNORE INTO control VALUES(1,'paused');
 '''
 

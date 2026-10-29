@@ -245,6 +245,29 @@ class PumpTests(unittest.TestCase):
         self.assertEqual([w['role'] for w in self.e.pending_work()], ['observer'])
         self.assertEqual(self.e.abandon_work(target), 0)   # idempotent, not an error
 
+    def test_correct_answer_without_a_tool_trace_is_not_a_breach(self):
+        """run 002: a right answer arrived with no compute behind it. Right is not enough."""
+        cid = self.cycle()
+        plain = self.attack()
+        with self.e.tx() as db:
+            db.execute('DELETE FROM derivations')      # simulate solving by another route
+        out = self.e.submit(cid, plain)
+        self.assertFalse(out['verified'])
+        self.assertEqual(out['reason'], 'no_derivation_trace')
+        self.assertEqual(self.e.view('adversary')['candy'], 0)
+        self.assertEqual(self.e.view('adversary')['challenge']['state'], 'ACTIVE')
+        # rejection does not consume the challenge: a traced answer still counts
+        self.attack()
+        self.assertTrue(self.e.submit(cid, plain)['verified'])
+
+    def test_breach_records_how_it_was_reached(self):
+        cid = self.cycle()
+        self.e.submit(cid, self.attack())
+        with self.e.connect() as db:
+            event = json.loads(db.execute(
+                "SELECT data FROM events WHERE kind='breach_confirmed'").fetchone()[0])
+        self.assertEqual(event['method'], 'tool_compute')
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))

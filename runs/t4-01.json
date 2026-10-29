@@ -1,0 +1,20 @@
+[
+  {
+    "work_id": "0fd7f98d225e22e1895e129e5fbda8cd",
+    "role": "generator",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"catalog\":[{\"id\":1,\"spec\":{\"assumptions\":\"Fixed secret byte key, public constants, no chaining.\",\"limitations\":\"Byte-local; the key is a single byte recovered by a 256-candidate scan.\",\"math\":\"Each step is a bijection on Z/256; the composition inverts by reversing the ops.\",\"name\":\"probe-fold-3\",\"program\":[[\"xor_key\",0],[\"rol\",3],[\"add\",41],[\"xor\",90],[\"rol\",5]]}}],\"feedback\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"generator\",\"task\":\"Propose a candidate construction, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "76ea274ab07f31ec805f4bf23c43fa1c",
+    "role": "adversary",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"candy\":0,\"challenge\":{\"id\":1,\"parent\":null,\"public\":{\"category\":\"plaintext_recovery\",\"ciphertext\":\"65dff3f76b30c084ac3c63cb6fd5d5fab6fc72f01f316755\",\"known_ciphertext\":\"9d9e939c\",\"known_plaintext\":\"00010203\",\"mode\":\"open\",\"oracle_budget\":0,\"rules\":\"Recover exact target plaintext. Toy 8-bit key. No external targets.\",\"spec\":{\"assumptions\":\"Fixed secret byte key, public constants, no chaining.\",\"limitations\":\"Byte-local; the key is a single byte recovered by a 256-candidate scan.\",\"math\":\"Each step is a bijection on Z/256; the composition inverts by reversing the ops.\",\"name\":\"probe-fold-3\",\"program\":[[\"xor_key\",0],[\"rol\",3],[\"add\",41],[\"xor\",90],[\"rol\",5]]}},\"state\":\"ACTIVE\"}},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"adversary\",\"task\":\"Recover the target plaintext, or idle.\",\"turn\":1}"
+  },
+  {
+    "work_id": "e15db77de28522ee0c1239a47fadf16c",
+    "role": "observer",
+    "turn": 1,
+    "prompt": "{\"environment\":{\"events\":[{\"created\":1793272136.556458,\"data\":\"{\\\"candidate\\\":1}\",\"id\":1,\"kind\":\"candidate_registered\"},{\"created\":1793272136.712859,\"data\":\"{\\\"candidate\\\":1}\",\"id\":2,\"kind\":\"candidate_registered\"},{\"created\":1793272136.7621517,\"data\":\"{\\\"challenge\\\":1,\\\"mode\\\":\\\"open\\\",\\\"parent\\\":null}\",\"id\":3,\"kind\":\"published\"},{\"created\":1793272136.9393997,\"data\":\"{\\\"cursor\\\":3,\\\"role\\\":\\\"generator\\\",\\\"work_id\\\":\\\"0fd7f98d225e22e1895e129e5fbda8cd\\\"}\",\"id\":4,\"kind\":\"work_started\"},{\"created\":1793272137.0206082,\"data\":\"{\\\"cursor\\\":3,\\\"role\\\":\\\"adversary\\\",\\\"work_id\\\":\\\"76ea274ab07f31ec805f4bf23c43fa1c\\\"}\",\"id\":5,\"kind\":\"work_started\"}],\"findings\":[]},\"respond\":\"one JSON object: {\\\"tool\\\":\\\"...\\\",\\\"args\\\":{...}} or {\\\"idle\\\":true}\",\"role\":\"observer\",\"task\":\"Record an evidenced weakness, or idle.\",\"turn\":1}"
+  }
+]

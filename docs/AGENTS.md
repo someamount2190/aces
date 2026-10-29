@@ -123,6 +123,9 @@ message carries only the projection.
 - **Rules:** operate only on the published challenge; no external targets; candy exists only after
   verification; a failed attack is a normal outcome, not a reason to fabricate one; a large number of
   attempts is not a win condition.
+- **Trace rule:** a submission counts only if a `compute` result for that challenge contains it. An answer
+  reached any other way earns nothing and does not consume the challenge, even when it is correct. A session
+  has its own tools and can compute; the gate cannot see that, so it requires the declared path.
 
 ### 4.4 Observer
 

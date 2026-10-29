@@ -1,0 +1,1 @@
+{"tool":"compute","args":{"program":[["xor_key",0],["rol",3],["add",41],["xor",90],["rol",5]],"known_plaintext":"00010203","known_ciphertext":"9d9e939c","ciphertext":"65dff3f76b30c084ac3c63cb6fd5d5fab6fc72f01f316755"}}

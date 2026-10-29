@@ -241,7 +241,21 @@ class Engine:
                 return {'verified': bool(prior[0]), 'duplicate': True}
             if row['state'] != 'ACTIVE':
                 raise Denied('challenge unavailable')
-            valid = verify_plaintext(json.loads(row['secret'])['plaintext'], plaintext)
+            matched = verify_plaintext(json.loads(row['secret'])['plaintext'], plaintext)
+            derived = False
+            for r in db.execute('SELECT solutions FROM derivations WHERE challenge=?', (challenge,)):
+                if plaintext in {s.get('plaintext') for s in json.loads(r[0])}:
+                    derived = True
+                    break
+            if matched and not derived:
+                # The answer is right but nothing shows it came from the declared tool path. A correct
+                # answer the adversary computed (or read) elsewhere is not evidence of cryptanalysis,
+                # so it earns nothing and does not consume the challenge. No row is written, so a
+                # submission after a real compute is still accepted.
+                self.event(db, 'submission_rejected', {'challenge': challenge,
+                                                       'reason': 'no_derivation_trace'})
+                return {'verified': False, 'reason': 'no_derivation_trace'}
+            valid = matched and derived
             sid = db.execute('INSERT INTO submissions(challenge,evidence,valid) VALUES(?,?,?)',
                              (challenge, plaintext, int(valid))).lastrowid
             self.event(db, 'submission_evaluated', {'challenge': challenge, 'verified': valid})
@@ -250,6 +264,7 @@ class Engine:
                 db.execute('INSERT INTO rewards(challenge,submission) VALUES(?,?)', (challenge, sid))
                 self.event(db, 'breach_confirmed', {'challenge': challenge, 'category': 'plaintext_recovery',
                                                     'verification': 'exact comparison with committed target',
+                                                    'method': 'tool_compute',
                                                     'escalation_authorized': True})
         return {'verified': valid, 'duplicate': False}
 
@@ -318,8 +333,18 @@ class Engine:
             target = bytes.fromhex(args['ciphertext'])
             if max(len(known), len(cipher), len(target)) > 4096:
                 raise ValueError('input too large')
-            return {'solutions': [{'plaintext': transform(target, k, program, True).hex(), 'key': k}
-                                  for k in range(256) if transform(known, k, program) == cipher]}
+            solutions = [{'plaintext': transform(target, k, program, True).hex(), 'key': k}
+                         for k in range(256) if transform(known, k, program) == cipher]
+            with self.tx() as db:
+                active = db.execute("SELECT id FROM challenges WHERE state='ACTIVE' "
+                                    "ORDER BY id DESC LIMIT 1").fetchone()
+                if active:
+                    db.execute('INSERT INTO derivations(challenge,role,program,solutions,created) '
+                               'VALUES(?,?,?,?,?)',
+                               (active['id'], role, packed(program), packed(solutions), time.time()))
+                    self.event(db, 'derivation_recorded', {'challenge': active['id'], 'role': role,
+                                                           'solutions': len(solutions)})
+            return {'solutions': solutions}
         if name == 'record_finding':
             if set(args) != {'challenge', 'finding'} or not isinstance(args['finding'], str) \
                     or len(args['finding']) > 8000:
