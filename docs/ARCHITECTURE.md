@@ -299,16 +299,23 @@ and the loop stalls at the gate. That is not a fault in the gate — it is the V
 express. Lifting it requires the construction language to gain parameters that actually raise the cost of a
 known-plaintext search: a wider key, cross-byte mixing, or a state that carries between blocks.
 
-**Construction language (v2).** Seven operations: five byte-local (`xor_key`, `add_key`, `xor`, `add`,
+**Construction language (v3).** Seven operations: five byte-local (`xor_key`, `add_key`, `xor`, `add`,
 `rol`) and two that mix across positions (`chain_add`, `chain_xor`, both invertible by reversing the
-sweep direction). The key is 16 bits, consumed round-robin by byte position. Reversibility is checked
-exhaustively over the 256-value byte domain and sampled over the 65,536-key space — exhaustive over both
-would cost 16 M transformations per registration, which buys nothing the sample does not.
+sweep direction). The key is **32 bits** by default, consumed round-robin by byte position; the width is a
+per-run parameter, so a small width can still exercise the loop end to end. Reversibility is checked
+exhaustively over the 256-value byte domain and sampled over the key space — exhaustive over both would
+cost billions of transformations per registration and prove nothing the sample does not.
 
-This is a deliberate step, not a rest: `chain_add`/`chain_xor` stop the construction being a per-byte map,
-so a known-plaintext search no longer decomposes per position. But at 16 bits the search still costs at
-most 65,536 trials, so the key width, not the mixing, is what currently bounds the work. Mixing becomes
-the binding constraint only once the key is wide enough that exhaustive search is off the table.
+`compute` now carries an explicit search budget: at most 2^20 keys per call, returning
+`{"solutions": [], "exhausted": true, "searched": 1048576}` when the space is wider than that. Exhaustion is
+reported rather than hidden, because a tool that silently gives up is indistinguishable from a tool that
+searched everything.
+
+**The consequence, stated plainly.** At 32 bits an exhaustive known-plaintext search costs 2^32 trials;
+`compute` reaches 2^20 and stops. So the Adversary's only implementable method no longer produces breaches.
+The gate will now accept a construction that is not byte-local, and nothing can break it — the bottleneck
+has moved from construction to attack capability. That is the honest state of a system whose solver is an
+enumerator and whose cipher now has a key space the enumerator cannot cross.
 
 **Exactly-once:** the verdict, the state transition, the reward insert, the breach record and the events are
 one `BEGIN IMMEDIATE` transaction. Duplicate submissions short-circuit on the `(challenge, evidence)` unique

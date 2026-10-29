@@ -7,12 +7,12 @@ import hashlib
 
 # Bounded straight-line byte permutation language. No names, imports, loops or IO.
 #
-# v2 fattened the Generator: the key is 16 bits instead of 8, and two chain operations mix across
-# byte positions. Without a cross-byte operation every construction is a per-byte map, and a
-# known-plaintext search costs 2^key_bits regardless of how elaborate the program looks.
-KEY_BYTES = 2
-KEY_BITS = KEY_BYTES * 8
-KEY_SPACE = 1 << KEY_BITS
+# v3 widened the key. At 16 bits a known-plaintext search was 65,536 trials; at the default 32 bits it
+# is 4.29 billion, which an exhaustive enumerator cannot reach inside a turn budget. The width is a
+# property of the run, not a constant of the language, so a small width can still be used to exercise
+# the loop end to end.
+DEFAULT_KEY_BITS = 32
+COMPUTE_BUDGET = 1 << 20          # keys a single compute call will enumerate before declaring defeat
 OPS = ('xor_key', 'add_key', 'xor', 'add', 'rol', 'chain_add', 'chain_xor')
 CHAIN_OPS = ('chain_add', 'chain_xor')
 
@@ -29,14 +29,15 @@ def validate(program):
     return program
 
 
-def _key_bytes(key):
+def key_bytes(key, key_bits=DEFAULT_KEY_BITS):
+    """Canonical key material. Bytes pass through; an integer is encoded at the run's width."""
     if isinstance(key, (bytes, bytearray)):
         if not 1 <= len(key) <= 32:
             raise ValueError('invalid key length')
         return bytes(key)
-    if type(key) is not int or not 0 <= key < KEY_SPACE:
+    if type(key) is not int or key < 0 or key >= (1 << key_bits):
         raise ValueError('invalid key')
-    return key.to_bytes(KEY_BYTES, 'big')
+    return key.to_bytes(key_bits // 8, 'big')
 
 
 def transform(data, key, program, inverse=False):
@@ -44,7 +45,7 @@ def transform(data, key, program, inverse=False):
     validate(program)
     if not isinstance(data, bytes) or len(data) > 4096:
         raise ValueError('invalid VM input')
-    keys = _key_bytes(key)
+    keys = key_bytes(key)
     buf = bytearray(data)
     steps = list(reversed(program)) if inverse else program
 
@@ -75,20 +76,21 @@ def transform(data, key, program, inverse=False):
     return bytes(buf)
 
 
-def key_sample(limit=512):
+def key_sample(key_bits=DEFAULT_KEY_BITS, limit=256):
     """Keys to check invertibility against. Exhaustive when the space is small enough to afford."""
-    if KEY_SPACE <= limit:
-        return list(range(KEY_SPACE))
-    step = KEY_SPACE // limit
-    sample = list(range(0, KEY_SPACE, step))[:limit]
-    return sample + [KEY_SPACE - 1]
+    space = 1 << key_bits
+    if space <= limit:
+        return [k.to_bytes(max(1, key_bits // 8), 'big') for k in range(space)]
+    step = space // limit
+    sample = [k.to_bytes(key_bits // 8, 'big') for k in range(0, space, step)][:limit]
+    return sample + [(space - 1).to_bytes(key_bits // 8, 'big')]
 
 
-def is_reversible(program, keys=None):
+def is_reversible(program, key_bits=DEFAULT_KEY_BITS, keys=None):
     """Invertibility check: exhaustive over the byte domain, sampled over the key space."""
     validate(program)
     domain = bytes(range(256))
-    for key in (keys if keys is not None else key_sample()):
+    for key in (keys if keys is not None else key_sample(key_bits)):
         if transform(transform(domain, key, program), key, program, True) != domain:
             return False
     return True

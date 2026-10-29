@@ -31,8 +31,8 @@ The program is 1..32 straight-line steps from this fixed set (no names, imports,
   ["chain_add",n] each byte becomes its running sum with the previous byte, mod 256
   ["chain_xor",n] each byte is XORed with the previous byte
 
-The key is 16 bits (two bytes), used round-robin by position: byte 0 sees key[0], byte 1 sees key[1],
-byte 2 sees key[0] again, and so on. The operand of a *_key step is a PLACEHOLDER: the engine ignores
+The key is 32 bits (four bytes), used round-robin by position: byte 0 sees key[0], byte 1 sees key[1],
+byte 4 sees key[0] again, and so on. The operand of a *_key step is a PLACEHOLDER: the engine ignores
 it and substitutes the key byte, which is different for every challenge and never shown to you. A
 program containing at least one *_key step is keyed; one with none is unkeyed and will be rejected at
 publication, because it can be inverted from public information alone.
@@ -99,8 +99,11 @@ Tools:
                             "known_ciphertext":hex,"ciphertext":hex}}
   {"tool":"submit","args":{"challenge":integer,"plaintext":hex,"method":str,"detail":str}}
 
-compute exhaustively tests every 16-bit key (65,536 candidates) against the known pair and returns
-candidate target plaintexts. submit is verified exactly; candy is awarded only after verification.
+compute enumerates at most 1,048,576 keys against the known pair and returns candidate target
+plaintexts. The challenge key is 32 bits, so an exhaustive search will not reach it: expect
+"solutions": [] with "exhausted": true. Exhaustion is a real answer — it tells you the key space is out
+of reach and that the construction must be attacked structurally instead. submit is verified exactly;
+candy is awarded only after verification.
 
 **A submission counts only if it names the method that produced it.** The engine records every
 compute result; a plaintext is a breach only when one of those results contains it *and* the method

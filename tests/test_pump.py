@@ -13,7 +13,7 @@ class PumpTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / 'db.sqlite3'
-        self.e = Engine(self.path)
+        self.e = Engine(self.path, key_bits=16)
         with self.e.tx() as db:
             db.execute("UPDATE control SET state='running'")
 
@@ -146,7 +146,7 @@ class PumpTests(unittest.TestCase):
         cid = self.cycle()
         plain = self.attack()
         self.assertTrue(self.e.submit(cid, plain, method='known_plaintext_key_search')['verified'])
-        reopened = Engine(self.path)
+        reopened = Engine(self.path, key_bits=16)
         self.assertEqual(reopened.view('adversary')['candy'], 1)
         self.assertEqual(reopened.view('adversary')['challenge']['state'], 'BREACHED')
         with reopened.connect() as db:
@@ -362,6 +362,25 @@ class PumpTests(unittest.TestCase):
                       json.dumps({'tool': 'reject', 'args': {'candidate': cid, 'reason': 'no'}}))
         self.assertEqual(out['error'], 'ToolDenied')
 
+    def test_a_32_bit_key_is_out_of_reach_of_the_search(self):
+        """The default width: compute exhausts its budget, finds nothing, and says so."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        wide = Engine(Path(tmp.name) / 'wide.sqlite3')      # default 32-bit key
+        wide.register(SPEC)
+        wide.publish(1)
+        public = wide.view('adversary')['challenge']['public']
+        out = wide.tool('adversary', 'compute', {
+            'program': public['spec']['program'],
+            'known_plaintext': public['known_plaintext'],
+            'known_ciphertext': public['known_ciphertext'],
+            'ciphertext': public['ciphertext']})
+        self.assertEqual(out['solutions'], [])
+        self.assertTrue(out['exhausted'])
+        self.assertEqual(out['searched'], 1 << 20)
+        self.assertEqual(wide.view('adversary')['candy'], 0)
+        self.assertEqual(wide.view('integrator')['catalog'][0]['assessment']['key_bits'], 32)
+
     def test_verify_helpers(self):
         self.assertTrue(is_reversible([['xor_key', 0]]))
         self.assertTrue(is_reversible([['add', 1], ['rol', 3], ['xor', 81]]))
@@ -374,4 +393,5 @@ class PumpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

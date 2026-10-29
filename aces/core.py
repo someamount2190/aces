@@ -7,7 +7,7 @@ import contextlib, hashlib, json, secrets, sqlite3, time
 
 from .schema import apply, DOMAIN_EVENTS
 from .verify import (transform, validate, is_reversible, has_secret_term, verify_plaintext,
-                     valid_method, KEY_BITS, KEY_BYTES, KEY_SPACE, CHAIN_OPS)
+                     valid_method, key_bytes, DEFAULT_KEY_BITS, COMPUTE_BUDGET, CHAIN_OPS)
 
 ROLES = ('generator', 'integrator', 'adversary', 'observer')
 WARDEN = 'warden'                    # supervisory: audits projections, holds no authority
@@ -31,18 +31,17 @@ def contract(spec):
     return {k: spec[k] for k in SPEC_FIELDS if k in spec}
 
 
-def assess(spec):
+def assess(spec, key_bits=DEFAULT_KEY_BITS):
     """Structural facts about a construction, so a difficulty judgement has a number under it.
 
-    These are properties of the VM, not opinions: every key is one byte, every operation acts on
-    one byte, and a known-plaintext search therefore costs at most 256 trials. Any construction the
-    current VM can express is breakable this way — the assessment exists so the Integrator can say
-    so instead of guessing, and so "harder" can eventually mean something measured.
+    These are properties of the VM and the run, not opinions: the key is `key_bits` wide, so a
+    known-plaintext search costs at most 2^key_bits trials, and a construction with no chain operation
+    decomposes into independent per-byte maps, which makes that search cheaper still in practice.
     """
     program = spec.get('program', [])
     mixes = any(str(op) in CHAIN_OPS for op, _ in program)
-    return {'key_bits': KEY_BITS,
-            'known_plaintext_work': KEY_SPACE,
+    return {'key_bits': key_bits,
+            'known_plaintext_work': 1 << key_bits,
             'byte_local': not mixes,
             'key_ops': sum(1 for op, _ in program if str(op).endswith('_key')),
             'program_length': len(program)}
@@ -64,8 +63,9 @@ class _ClosingConnection(sqlite3.Connection):
 
 
 class Engine:
-    def __init__(self, path):
+    def __init__(self, path, key_bits=DEFAULT_KEY_BITS):
         self.path = str(path)
+        self.key_bits = key_bits
         with self.connect() as db:
             apply(db)
             for role in ALL_ROLES:
@@ -207,12 +207,15 @@ class Engine:
         if any(not isinstance(spec[k], str) or len(spec[k]) > 8000
                for k in ('name', 'limitations', 'math', 'assumptions')):
             raise ValueError('invalid specification')
-        if not is_reversible(spec['program']):
+        if not is_reversible(spec['program'], self.key_bits):
             raise ValueError('not reversible')
-        record = dict(spec, status='experimental', keygen='uniform byte using secrets.randbelow(256)',
-                      input_size='0..4096 bytes', security_claim='none; toy 8-bit key', dependencies=[],
+        probe = (7).to_bytes(self.key_bits // 8, 'big')
+        record = dict(spec, status='experimental', keygen=f'uniform {self.key_bits}-bit key',
+                      input_size='0..4096 bytes', security_claim=f'none; toy {self.key_bits}-bit key',
+                      dependencies=[],
                       test_vector={'key': 7, 'plaintext': '0001ff',
-                                   'ciphertext': transform(bytes.fromhex('0001ff'), 7, spec['program']).hex()})
+                                   'ciphertext': transform(bytes.fromhex('0001ff'), probe,
+                                                           spec['program']).hex()})
         digest = hashlib.sha256(packed(record).encode()).hexdigest()
         with self.tx() as db:
             db.execute('INSERT OR IGNORE INTO candidates(spec,digest) VALUES(?,?)', (packed(record), digest))
@@ -252,9 +255,9 @@ class Engine:
             spec = json.loads(row[0])
             if not has_secret_term(spec['program']):
                 raise Denied('candidate has no secret-dependent term')
-            key = secrets.token_bytes(KEY_BYTES)
+            key = secrets.token_bytes(self.key_bits // 8)
             plain = secrets.token_bytes(24)
-            public = {'mode': mode, 'category': 'plaintext_recovery',
+            public = {'mode': mode, 'category': 'plaintext_recovery', 'key_bits': self.key_bits,
                       'ciphertext': transform(plain, key, spec['program']).hex(),
                       'known_plaintext': '00010203',
                       'known_ciphertext': transform(bytes(range(4)), key, spec['program']).hex(),
@@ -363,7 +366,8 @@ class Engine:
                 # that a property failed, not what the answer was.
                 failures = [{k: v for k, v in json.loads(r[0]).items() if k != 'plaintext'}
                             for r in db.execute("SELECT data FROM events WHERE kind='breach_confirmed'")]
-                catalog = [dict(entry, assessment=assess(entry['spec'])) for entry in catalog]
+                catalog = [dict(entry, assessment=assess(entry['spec'], self.key_bits))
+                           for entry in catalog]
                 return {'challenge': challenge, 'catalog': catalog, 'verified_failures': failures}
             if role == 'generator':
                 # How each challenge fell, so the next construction can be built against the method
@@ -398,25 +402,38 @@ class Engine:
         if name == 'submit':
             return self.submit(**args)
         if name == 'compute':
-            # Bounded cryptanalysis: no interpreter, no filesystem, no network.
+            # Bounded cryptanalysis: no interpreter, no filesystem, no network. The search is capped
+            # and says so, rather than running until the turn budget dies.
             program = validate(args['program'])
             known = bytes.fromhex(args['known_plaintext'])
             cipher = bytes.fromhex(args['known_ciphertext'])
             target = bytes.fromhex(args['ciphertext'])
             if max(len(known), len(cipher), len(target)) > 4096:
                 raise ValueError('input too large')
-            solutions = [{'plaintext': transform(target, k, program, True).hex(), 'key': k}
-                         for k in range(KEY_SPACE) if transform(known, k, program) == cipher]
-            with self.tx() as db:
-                active = db.execute("SELECT id FROM challenges WHERE state='ACTIVE' "
+            with self.connect() as db:
+                active = db.execute("SELECT id,public FROM challenges WHERE state='ACTIVE' "
                                     "ORDER BY id DESC LIMIT 1").fetchone()
+            bits = self.key_bits
+            if active:
+                bits = json.loads(active['public']).get('key_bits', bits)
+            space = 1 << bits
+            budget = min(space, COMPUTE_BUDGET)
+            width = max(1, bits // 8)
+            solutions = []
+            for k in range(budget):
+                probe = k.to_bytes(width, 'big')
+                if transform(known, probe, program) == cipher:
+                    solutions.append({'plaintext': transform(target, probe, program, True).hex(), 'key': k})
+            with self.tx() as db:
                 if active:
                     db.execute('INSERT INTO derivations(challenge,role,program,solutions,created) '
                                'VALUES(?,?,?,?,?)',
                                (active['id'], role, packed(program), packed(solutions), time.time()))
                     self.event(db, 'derivation_recorded', {'challenge': active['id'], 'role': role,
-                                                           'solutions': len(solutions)})
-            return {'solutions': solutions}
+                                                           'solutions': len(solutions),
+                                                           'searched': budget,
+                                                           'exhausted': budget < space})
+            return {'solutions': solutions, 'searched': budget, 'exhausted': budget < space}
         if name == 'record_finding':
             if set(args) != {'challenge', 'finding'} or not isinstance(args['finding'], str) \
                     or len(args['finding']) > 8000:

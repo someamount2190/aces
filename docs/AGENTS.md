@@ -103,7 +103,7 @@ message carries only the projection.
 - **Tools:** `register{spec:{name, program, limitations, math, assumptions}}`.
 - **Output:** exactly one JSON object, or `{"idle": true}`.
 - **Program:** 1–32 steps from `xor_key`, `add_key`, `xor`, `add`, `rol`, `chain_add`, `chain_xor`.
-  The key is 16 bits, used round-robin by position. `chain_add` and `chain_xor` mix across byte
+  The key is 32 bits, used round-robin by position. `chain_add` and `chain_xor` mix across byte
   positions; without one of them the construction is a per-byte map and a known-plaintext search
   costs the full key space whatever else the program does.
 - **Rules:** 1–32 straight-line op steps from the fixed op set; no security claims; state the failure mode

@@ -6,7 +6,7 @@ from aces.runtime import Coordinator
 SPEC={'name':'toy xor','program':[['xor_key',0]],'limitations':'8-bit key brute force','math':'c=p xor k','assumptions':'none'}
 class Tests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(); self.path=Path(self.tmp.name)/'db'; self.e=Engine(self.path)
+        self.tmp=tempfile.TemporaryDirectory(); self.path=Path(self.tmp.name)/'db'; self.e=Engine(self.path, key_bits=16)
         self.cid=self.e.tool('generator','register',{'spec':SPEC})['candidate']
     def tearDown(self): self.tmp.cleanup()
     def publish(self): return self.e.tool('integrator','publish',{'candidate':self.cid})['challenge']
@@ -36,7 +36,7 @@ class Tests(unittest.TestCase):
         self.assertTrue(self.e.submit(cid,plain,method='known_plaintext_key_search')['verified'])
         self.assertTrue(self.e.submit(cid,plain)['duplicate'])
         self.assertEqual(self.e.view('adversary')['candy'],1)
-        self.e=Engine(self.path)
+        self.e=Engine(self.path, key_bits=16)
         self.assertEqual(self.e.view('adversary')['candy'],1)
         self.e.tool('observer','record_finding',{'challenge':cid,'finding':'Known pair permits 256-key enumeration.'})
         self.assertEqual(len(self.e.view('generator')['feedback']),1)
@@ -52,7 +52,7 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError): validate(p)
         with self.assertRaises(Denied): self.e.tool('adversary','shell',{'cmd':'cat /etc/passwd'})
     def test_active_restart(self):
-        self.publish(); before=self.e.view('adversary'); self.assertEqual(before,Engine(self.path).view('adversary'))
+        self.publish(); before=self.e.view('adversary'); self.assertEqual(before,Engine(self.path, key_bits=16).view('adversary'))
     def test_suspend_never_unlocks(self):
         cid=self.publish()
         with self.e.tx() as db: db.execute("UPDATE control SET state='stopped'")
@@ -79,4 +79,5 @@ class Tests(unittest.TestCase):
         self.assertEqual((row['turns'],row['cursor']), (1,17))
         self.assertEqual(item['status'],'DONE')
 if __name__=='__main__': unittest.main()
+
 
